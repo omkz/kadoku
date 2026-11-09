@@ -106,3 +106,45 @@ def test_order_history_owner_isolation_and_price_snapshot(client, database, monk
     assert detail.json()["paypal_order_id"] == "PP-" + first_id
     assert detail.json()["price_minor"] == 6800
     assert client.get("/api/v1/orders/" + other_id, headers=a).status_code == 404
+
+
+def test_cancelled_checkout_is_owner_scoped_idempotent_and_never_overwrites_paid(
+    client, database, monkeypatch, token_factory
+):
+    fake_paypal(monkeypatch)
+    product = next(
+        item for item in client.get("/api/v1/products").json()
+        if item["name"] == "Garden Lover's Box"
+    )
+    user_a = auth(token_factory, "user-a")
+    user_b = auth(token_factory, "user-b")
+    create = lambda: client.post("/api/v1/checkout/paypal/orders",
+                                 json={"product_id": product["id"]}, headers=user_a)
+    abandoned = create()
+    completed = create()
+    assert abandoned.status_code == completed.status_code == 200
+    abandoned_id = abandoned.json()["order_id"]
+    paid_id = completed.json()["order_id"]
+
+    cancel_url = f"/api/v1/orders/{abandoned_id}/cancel"
+    assert client.post(cancel_url).status_code == 401
+    assert client.post(cancel_url, headers=user_b).status_code == 404
+
+    cancelled = client.post(cancel_url, headers=user_a)
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json() == {"order_id": abandoned_id, "status": "cancelled"}
+    repeated = client.post(cancel_url, headers=user_a)
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "cancelled"
+    assert client.get(f"/api/v1/orders/{abandoned_id}", headers=user_a).json()["status"] == "cancelled"
+    assert client.post("/api/v1/checkout/paypal/capture", json={
+        "order_id": abandoned_id,
+        "paypal_order_id": "PP-" + abandoned_id,
+    }, headers=user_a).status_code == 409
+
+    captured = client.post("/api/v1/checkout/paypal/capture", json={
+        "order_id": paid_id, "paypal_order_id": "PP-" + paid_id
+    }, headers=user_a)
+    assert captured.status_code == 200
+    assert client.post(f"/api/v1/orders/{paid_id}/cancel", headers=user_a).status_code == 409
+    assert client.get(f"/api/v1/orders/{paid_id}", headers=user_a).json()["status"] == "paid"
