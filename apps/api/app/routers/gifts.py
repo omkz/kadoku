@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import optional_user
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.repositories.catalog import available_products, get_product
+from app.repositories.catalog import available_products, featured_products, get_product
 from app.models import Recipient
 from app.schemas.gifts import GiftCard, GiftRequest, GiftResponse, ProductOut
 from app.services.gifting import recommend, understand_request
@@ -16,6 +16,12 @@ router = APIRouter(prefix="/api/v1", tags=["gifting"])
 @router.get("/products", response_model=list[ProductOut])
 def products(db: Session = Depends(get_db)):
     return available_products(db)
+
+
+@router.get("/products/featured", response_model=list[ProductOut])
+def products_featured(db: Session = Depends(get_db)):
+    """Six editorial homepage picks; full catalog remains available for AI."""
+    return featured_products(db)
 
 
 @router.post("/gifts/recommendations", response_model=GiftResponse)

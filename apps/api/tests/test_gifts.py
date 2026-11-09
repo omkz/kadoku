@@ -44,6 +44,54 @@ def test_product_catalog(client):
     assert all(item["stock"] > 0 for item in data)
 
 
+
+def test_featured_products_returns_six_without_limiting_catalog(client):
+    """Homepage requests six; all 100 remain available to AI and catalog users."""
+    response = client.get("/api/v1/products/featured")
+    assert response.status_code == 200, response.text
+    featured = response.json()
+    assert len(featured) == 6
+    assert [p["name"] for p in featured] == [
+        "Artisan Coffee Ritual",
+        "Garden Lover's Box",
+        "Cozy Evening Box",
+        "Book Lover Bundle",
+        "Handmade Tea Box",
+        "Mini Watercolor Studio",
+    ]
+    assert len({p["id"] for p in featured}) == 6
+    full_catalog = client.get("/api/v1/products")
+    assert full_catalog.status_code == 200
+    assert len(full_catalog.json()) == 100
+    assert all(p["id"] in {product["id"] for product in full_catalog.json()} for p in featured)
+
+
+def test_featured_products_replace_unavailable_picks(client, database):
+    """Unavailable editorial choices are excluded; alternatives fill six slots."""
+    with database() as db:
+        coffee = db.query(Product).filter_by(name="Artisan Coffee Ritual").one()
+        coffee.stock = 0
+        garden = db.query(Product).filter_by(name="Garden Lover's Box").one()
+        garden.active = False
+        db.commit()
+
+    response = client.get("/api/v1/products/featured")
+    assert response.status_code == 200, response.text
+    featured = response.json()
+    names = [p["name"] for p in featured]
+    assert len(featured) == 6
+    assert names[:4] == [
+        "Cozy Evening Box",
+        "Book Lover Bundle",
+        "Handmade Tea Box",
+        "Mini Watercolor Studio",
+    ]
+    assert "Artisan Coffee Ritual" not in names
+    assert "Garden Lover's Box" not in names
+    assert len(set(names)) == 6
+    assert all(p["stock"] > 0 for p in featured)
+    assert len(client.get("/api/v1/products").json()) == 98
+
 def test_checkout_requires_config(client, token_factory):
     product = client.get("/api/v1/products").json()[0]
     response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"], "shipping_address":{

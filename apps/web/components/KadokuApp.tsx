@@ -21,12 +21,6 @@ const samplePrompts = [
 
 const DEFAULT_PRODUCT_IMAGE = "/products/default.webp";
 
-// Editorial demo picks, not a claim of actual sales or behavioral trending.
-const featuredNames = [
-  "Artisan Coffee Ritual", "Garden Lover's Box", "Cozy Evening Box",
-  "Book Lover Bundle", "Handmade Tea Box", "Mini Watercolor Studio",
-];
-
 
 // This is a demo checkout: country names are free-form, and dial codes remain
 // editable so users outside this suggestion list are not blocked.
@@ -134,17 +128,8 @@ export default function KadokuApp() {
   const loadFeatured = useCallback(async () => {
     setFeaturedStatus("loading");
     try {
-      const products = await api<CatalogProduct[]>("/products");
-      const available = products.filter(p => p.stock > 0);
-      const picks = featuredNames.flatMap(name => {
-        const match = available.find(p => p.name === name);
-        return match ? [match] : [];
-      });
-      for (const item of available) {
-        if (picks.length >= 6) break;
-        if (!picks.some(p => p.id === item.id)) picks.push(item);
-      }
-      setFeatured(picks);
+      const products = await api<CatalogProduct[]>("/products/featured");
+      setFeatured(products);
       setFeaturedStatus("ready");
     } catch {
       setFeatured([]);
