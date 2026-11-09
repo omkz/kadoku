@@ -9,7 +9,7 @@
 - **Web:** Next.js 16, React 19, TypeScript, CSS, Better Auth (email/password; optional Google OAuth).
 - **API:** Python, FastAPI, SQLAlchemy 2, Alembic; traditional layered architecture.
 - **Database:** PostgreSQL (native/local is supported); SQLite is supported for backend-only local tests.
-- **AI:** Deterministic recommendation engine with optional LiteLLM intent extraction; model can be changed using `AI_MODEL`. LangChain/advanced agent orchestration is a **future integration**, not required for the working baseline.
+- **AI:** Deterministic, catalog-grounded ranking with optional LiteLLM intent extraction and opt-in candidate reranking; model can be changed using `AI_MODEL`. LangChain/advanced agent orchestration is a **future integration**, not required for the working baseline.
 - **Checkout:** PayPal Orders v2 Sandbox using redirect approval and server-side capture. The integration is intentionally **blocked in live mode**.
 - **Voice:** Browser SpeechRecognition where supported, with typing fallback; may rely on the browser vendor's speech service.
 
@@ -33,6 +33,30 @@ On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it
 - Chat context is **kept only in the current browser tab's React state**, not persisted to PostgreSQL. Home starts a fresh conversation. Saved recipient profiles remain separate.
 - **Every recommendation/refinement call consumes the existing daily quota**. Guests are currently limited to one call/day and need to sign in to refine further. This flow is not unlimited chat.
 - No LLM-generated product or price is accepted; recommendations always come from the catalog.
+
+## Grounded recommendation quality (experimental)
+
+Kadoku **always** uses the actual shop catalog to determine eligible gifts. It checks active status, available stock, USD prices and explicit exclusions **before** offering products to an LLM. Deterministic ranking remains the default and a safe fallback; recommendation reasons are composed from catalog descriptions, matching interests, occasion tags, and the user's stated budget, rather than invented by a model.
+
+For more nuanced ordering, opt in to a **second LiteLLM call** that compares at most 12 eligible products and returns only their catalog IDs:
+
+```dotenv
+AI_MODEL=gemini/gemini-2.5-flash
+GEMINI_API_KEY=your_key_here
+AI_RERANK_ENABLED=true
+AI_RERANK_TIMEOUT_SECONDS=8
+```
+
+This is optional and **off by default** to preserve Gemini free-tier usage. When on, each recommendation request may use **two AI calls**: intent extraction and product reranking. The backend rejects unknown/duplicate product IDs and falls back to rule-based ranking if the provider times out, returns invalid JSON, or gives invalid IDs. AI cannot override price, currency, stock, or explicit exclusions.
+
+For debugging, the `POST /api/v1/gifts/recommendations` JSON response exposes `provider` (intent extraction) and `selection_provider` (ranking), each `llm`, `rules`, or `rules-fallback`. No extra API quota is consumed by running the offline evaluation tests:
+
+```bash
+cd apps/api
+uv run --extra test pytest -q tests/test_ranking_quality.py
+```
+
+The tests use synthetic catalog fixtures and fake LLM responses, **not** real supplier stock or a paid model. Personalized ranking and semantic exclusion coverage remain limited to known catalog attributes/terms; do not interpret these explanations as guaranteed recipient satisfaction.
 
 ## Local setup (Linux / macOS)
 
@@ -159,7 +183,7 @@ The code is organized by **technical layers** rather than separate feature folde
 ## Roadmap (not implemented yet)
 
 1. Real supplier sourcing, verified inventory, admin catalog and delivery estimator.
-2. AI evaluation set, contextual feedback loop, budget/semantic search, improved multilingual extraction, LangChain if useful.
+2. Expand the recommendation evaluation set, collect opt-in gift feedback, improve multilingual intent and exclusion coverage; consider LangChain orchestration if useful.
 3. Shipping address, tax calculation, inventory reservations, fulfillment, refunds, order history.
 4. Persistent gift history, occasion reminder worker, emails and recipient preference editing/deletion in UI.
 5. Hardened auth abuse limits, privacy controls, accessibility review, monitoring and full integration tests.
