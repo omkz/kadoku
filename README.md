@@ -38,7 +38,7 @@ On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it
 
 Five AI-generated **concept illustrations** are committed as compressed WebP assets (600×600 px) under `apps/web/public/products/`. They are matched to the existing demo catalog entries: Garden Lover's Box, Artisan Coffee Ritual, Handmade Tea Box, Book Lover Bundle, and Cozy Evening Box.
 
-Product `image_url` is optional: the remaining seven catalog entries retain their emoji illustrations. Recommendation and gift-detail cards render the image with Next.js `Image`; a missing/broken image falls back to the product emoji.
+Product `image_url` is optional. Recommendation and gift-detail cards render the catalog image with Next.js `Image`; when the image URL is absent or fails, Kadoku displays its branded `/products/default.webp` illustration (a compressed 256×256 WebP), then falls back to the product emoji only if even the local default image fails to load. The default is explicitly labeled *Illustrative image* in the artwork and is **not** a real product photo. No database migration or seed changes are needed for this presentation fallback.
 
 For an **existing database**, run the new Alembic migration and rerun the seed command after checking out this branch:
 
