@@ -44,7 +44,7 @@ pnpm dev
 
 ## 3. Test the end-to-end buyer flow
 
-1. Open http://localhost:3000, ask for a gift, and select one of the demo items.
+1. Open http://localhost:3000, **sign in to Kadoku** (email/password or Google), ask for a gift, and select one of the demo items. Guests can ask for gift recommendations but must sign in before checkout.
 2. Open its detail and checkout screen. The price is read from PostgreSQL, not from an editable browser total.
 3. Click **Continue to PayPal Sandbox**.
 4. The backend creates a local pending order and sends `POST /v2/checkout/orders` to the PayPal Sandbox API. The buyer is redirected to the PayPal Sandbox approval URL.
@@ -53,6 +53,12 @@ pnpm dev
 7. The backend checks PayPal's completed capture, exact USD amount and currency, then records local status `paid`. The return page displays **Sandbox payment complete**.
 
 To test cancellation, repeat the flow and cancel on PayPal. You should see **Checkout cancelled** at `/checkout/cancel`. A canceled flow is **not** treated as a paid order.
+
+After a successful capture, click **View My Orders** and open the order detail. Verify it shows the correct product, checkout-time price, status **Paid**, and Sandbox capture ID. Only your own orders should appear.
+
+Cancellation now records an owner-scoped local **Cancelled** state via an authenticated request to `POST /api/v1/orders/{id}/cancel`. It does **not** issue refunds or cancel a completed PayPal capture. A user who closes the checkout tab without returning to Kadoku may leave their order in **Awaiting payment**.
+
+**Legacy guest orders made before mandatory login are not assigned to a user and will not appear in My Orders.**
 
 To test an API error (for example an invalid Sandbox client secret), the app must show a failure message, not claim the order was paid.
 
