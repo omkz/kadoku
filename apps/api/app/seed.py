@@ -19,14 +19,38 @@ SAMPLES = [
 ]
 
 
+# Curated demo illustrations. Files live in apps/web/public/products/.
+# They are generated concept images, not supplier photos or actual inventory.
+IMAGE_URLS = {
+    "Garden Lover's Box": "/products/garden-lovers-box.webp",
+    "Artisan Coffee Ritual": "/products/artisan-coffee-ritual.webp",
+    "Handmade Tea Box": "/products/handmade-tea-box.webp",
+    "Book Lover Bundle": "/products/book-lover-bundle.webp",
+    "Cozy Evening Box": "/products/cozy-evening-box.webp",
+}
+
+
 def seed(db):
+    """Populate a blank demo DB, or fill missing image paths on existing rows.
+
+    Existing product attributes (including user-edited prices and stock) remain
+    untouched. Custom image URLs are never overwritten.
+    """
     if db.scalar(select(Product.id).limit(1)):
+        changed = False
+        for product in db.scalars(select(Product)).all():
+            image_url = IMAGE_URLS.get(product.name)
+            if image_url and not product.image_url:
+                product.image_url = image_url
+                changed = True
+        if changed:
+            db.commit()
         return 0
     for name, desc, category, price, interests, occasions, styles, emoji in SAMPLES:
         db.add(Product(name=name, description=desc, category=category,
                        price_minor=price, currency="USD", stock=10,
                        interests=interests, occasions=occasions, styles=styles,
-                       emoji=emoji, demo_only=True))
+                       emoji=emoji, image_url=IMAGE_URLS.get(name), demo_only=True))
     db.commit()
     return len(SAMPLES)
 
