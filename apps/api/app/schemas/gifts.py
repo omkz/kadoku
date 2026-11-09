@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 BoundedTag = Annotated[str, Field(min_length=1, max_length=60)]
@@ -89,8 +89,50 @@ class OccasionOut(OccasionIn):
     id: str
 
 
+class ShippingAddress(BaseModel):
+    """Universal demo shipping address. Saved as an immutable order snapshot."""
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=2, max_length=120)
+    address_line_1: str = Field(min_length=5, max_length=200)
+    address_line_2: str | None = Field(default=None, max_length=200)
+    city: str = Field(min_length=2, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    postal_code: str | None = Field(default=None, max_length=32)
+    country: str = Field(min_length=2, max_length=80)
+    phone_country_code: str | None = Field(default=None, pattern=r"^\+[1-9]\d{0,3}$")
+    phone_number: str | None = Field(default=None, max_length=30)
+
+    @field_validator("full_name", "address_line_1", "address_line_2", "city",
+                     "region", "postal_code", "country", "phone_number")
+    @classmethod
+    def trim_and_reject_blank(cls, value: str | None):
+        if value is None:
+            return value
+        text = value.strip()
+        if not text:
+            return None if value == "" else value  # required fields fail their length checks
+        return text
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, value: str | None):
+        if value is not None:
+            if not all(char.isdigit() or char in " -()." for char in value):
+                raise ValueError("Phone number contains invalid characters")
+            digits = "".join(char for char in value if char.isdigit())
+            if not (5 <= len(digits) <= 15):
+                raise ValueError("Phone number must have 5 to 15 digits")
+        return value
+
+    @field_validator("phone_country_code", mode="before")
+    @classmethod
+    def normalize_phone_code(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 class CheckoutStart(BaseModel):
     product_id: str
+    shipping_address: ShippingAddress
 
 
 class CheckoutCreated(BaseModel):
@@ -115,5 +157,6 @@ class OrderSummary(BaseModel):
 
 
 class OrderDetail(OrderSummary):
+    shipping_address: ShippingAddress | None = None
     paypal_order_id: str | None = None
     paypal_capture_id: str | None = None
