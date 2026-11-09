@@ -69,6 +69,8 @@ export default function KadokuApp() {
   const [selectedRecipient, setSelectedRecipient] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
+  const [peopleBusy, setPeopleBusy] = useState(false);
+  const [peopleError, setPeopleError] = useState("");
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail|null>(null);
   const [ordersBusy, setOrdersBusy] = useState(false);
@@ -88,6 +90,7 @@ export default function KadokuApp() {
   const [listening, setListening] = useState(false);
   const recognition = useRef<{stop:()=>void}|null>(null);
   const giftScroller = useRef<HTMLDivElement|null>(null);
+  const refineInput = useRef<HTMLInputElement|null>(null);
   const giftScrollPosition = useRef(0);
   const [giftNavigation, setGiftNavigation] = useState({left:false, right:false});
 
@@ -127,12 +130,23 @@ export default function KadokuApp() {
   }
 
   const loadPeople = useCallback(async () => {
-    if (!session?.user) {setRecipients([]);setOccasions([]);return;}
+    if (!session?.user?.id) {
+      setRecipients([]);setOccasions([]);setPeopleError("");setPeopleBusy(false);
+      return;
+    }
+    setPeopleBusy(true);
+    setPeopleError("");
     try {
       const [people, events] = await Promise.all([api<Recipient[]>("/recipients"), api<Occasion[]>("/occasions")]);
       setRecipients(people);setOccasions(events);
-    } catch { /* Auth token may not be initialized yet. */ }
-  }, [session?.user]);
+    } catch {
+      // Do not present a failed request as an empty saved-recipient list.
+      setRecipients([]);setOccasions([]);
+      setPeopleError("Could not load saved people. Please try again.");
+    } finally {
+      setPeopleBusy(false);
+    }
+  }, [session?.user?.id]);
   useEffect(() => { void loadPeople(); }, [loadPeople]);
 
   const loadOrders = useCallback(async () => {
@@ -384,7 +398,8 @@ export default function KadokuApp() {
         </div>)}
         <div className="user-bubble">{conversation[conversation.length-1]?.text}</div>
         <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"I found a few thoughtful ideas."} {(response?.recommendations.length||0)>0?"Here’s the one I’d pick.":""}</p></div></div>
-        <div className="gift-carousel">
+        {busy && <p className="gift-loading" role="status" aria-live="polite">Updating gift ideas…</p>}
+        {(response?.recommendations.length ?? 0) > 0 ? <div className="gift-carousel">
           <div ref={giftScroller} className="gift-scroller" aria-label="Gift recommendations"
                onScroll={() => {
                  giftScrollPosition.current = giftScroller.current?.scrollLeft ?? 0;
@@ -401,7 +416,10 @@ export default function KadokuApp() {
             aria-label="Previous gift" onClick={()=>moveGiftCarousel(-1)}>‹</button>}
           {giftNavigation.right && <button type="button" className="gift-carousel-arrow gift-carousel-next"
             aria-label="Next gift" onClick={()=>moveGiftCarousel(1)}>›</button>}
-        </div>
+        </div> : <div className="empty-profile gift-empty" role="status">
+          <p>No gifts match all those preferences right now. Try adjusting your budget or restrictions.</p>
+          <button type="button" className="primary-action" onClick={()=>refineInput.current?.focus()}>Adjust gift request</button>
+        </div>}
         {(response?.recommendations.length||0)>1 &&
           <p className="swipe-note">
             <span className="swipe-mobile">← Swipe to see all {response?.recommendations.length||0} ideas →</span>
@@ -412,7 +430,7 @@ export default function KadokuApp() {
           <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
           <button disabled={busy} onClick={()=>void findGifts("Something more personal")}>More personal</button>
         </div>}
-        <div className="refine-box"><input aria-label="Refine your request" placeholder="Something more personal, perhaps?" value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button onClick={speak} aria-label="Voice input">♬</button><button disabled={busy} onClick={()=>void findGifts()} aria-label="Refine recommendations">↑</button></div>
+        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder="Something more personal, perhaps?" value={prompt} disabled={busy} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy} onClick={speak} aria-label="Voice input">♬</button><button disabled={busy} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
@@ -491,7 +509,9 @@ export default function KadokuApp() {
             <button className="primary-action" disabled={busy} onClick={savePerson}>Save recipient →</button>
           </div>
           <h3 className="people-heading">Saved people</h3>
-          {recipients.length===0 ? <p className="muted">No saved people yet.</p> : recipients.map(p=>{
+          {peopleBusy ? <p className="muted" role="status">Loading saved people…</p>
+             : peopleError ? <div><p role="alert" className="auth-error">{peopleError}</p><button type="button" className="text-button" onClick={()=>void loadPeople()}>Try again</button></div>
+             : recipients.length===0 ? <p className="muted">No saved people yet.</p> : recipients.map(p=>{
             const birthday=occasions.find(o=>o.recipient_id===p.id && o.kind==="birthday");
             return <div className="person-card" key={p.id}><span className="person-avatar">{p.name[0].toUpperCase()}</span><div><b>{p.name}</b><p>{p.interests.join(" · ")||"No interests yet"}{birthday?` · Birthday ${birthday.month}/${birthday.day}`:""}</p></div><button onClick={()=>{setSelectedRecipient(p.id);setPrompt(`I need a thoughtful gift for ${p.name}, who loves ${p.interests.join(", ")||"meaningful surprises"}. Budget $100.`);setScreen("home");}}>Find gift ↗</button></div>;
           })}
