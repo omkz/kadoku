@@ -73,6 +73,7 @@ export default function KadokuApp() {
   const [peopleError, setPeopleError] = useState("");
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail|null>(null);
+  const [requestedOrderId, setRequestedOrderId] = useState<string|null>(null);
   const [ordersBusy, setOrdersBusy] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [checkoutAfterLogin, setCheckoutAfterLogin] = useState(false);
@@ -87,6 +88,7 @@ export default function KadokuApp() {
   const [authName, setAuthName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const canRefine = (response?.remaining_today ?? 0) > 0;
   const [listening, setListening] = useState(false);
   const recognition = useRef<{stop:()=>void}|null>(null);
   const giftScroller = useRef<HTMLDivElement|null>(null);
@@ -185,6 +187,7 @@ export default function KadokuApp() {
   }, [session?.user?.id]);
 
   async function openOrder(orderId: string) {
+    setRequestedOrderId(orderId);
     setScreen("order-detail");
     setSelectedOrder(null);
     setOrdersError("");
@@ -417,8 +420,12 @@ export default function KadokuApp() {
           {giftNavigation.right && <button type="button" className="gift-carousel-arrow gift-carousel-next"
             aria-label="Next gift" onClick={()=>moveGiftCarousel(1)}>›</button>}
         </div> : <div className="empty-profile gift-empty" role="status">
-          <p>No gifts match all those preferences right now. Try adjusting your budget or restrictions.</p>
-          <button type="button" className="primary-action" onClick={()=>refineInput.current?.focus()}>Adjust gift request</button>
+          <p>No gifts match all those preferences right now.</p>
+          {canRefine
+            ? <button type="button" className="primary-action" onClick={()=>refineInput.current?.focus()}>Adjust gift request</button>
+            : <button type="button" className="primary-action" onClick={session?.user ? goHome : ()=>{setCheckoutAfterLogin(false);setShowAuth(true);}}>
+                {session?.user ? "Back to home" : "Sign in for more ideas"}
+              </button>}
         </div>}
         {(response?.recommendations.length||0)>1 &&
           <p className="swipe-note">
@@ -426,11 +433,11 @@ export default function KadokuApp() {
             <span className="swipe-desktop">Use the arrows or trackpad to see all {response?.recommendations.length||0} ideas</span>
           </p>}
         <div className="assistant-followup"><span>✦</span><p>Not quite right? Tell me what to change. I remember the details from this chat.</p></div>
-        {(response?.remaining_today ?? 0) > 0 && <div className="refine-suggestions">
+        {canRefine && <div className="refine-suggestions">
           <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
           <button disabled={busy} onClick={()=>void findGifts("Something more personal")}>More personal</button>
         </div>}
-        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder="Something more personal, perhaps?" value={prompt} disabled={busy} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy} onClick={speak} aria-label="Voice input">♬</button><button disabled={busy} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
+        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder={canRefine ? "Something more personal, perhaps?" : "Daily recommendation limit reached"} value={prompt} disabled={busy || !canRefine} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy || !canRefine} onClick={speak} aria-label="Voice input">♬</button><button disabled={busy || !canRefine} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
@@ -479,7 +486,7 @@ export default function KadokuApp() {
         <div className="inside-header"><button className="back-button" onClick={()=>setScreen("orders")} aria-label="Back to My Orders">←</button><span>Order details</span><span>⌑</span></div>
         {!session?.user ? <div className="empty-profile"><p>Sign in to view this order.</p><button className="primary-action" onClick={()=>setShowAuth(true)}>Sign in</button></div> :
           ordersBusy ? <p className="muted" role="status">Loading order…</p> : ordersError ?
-          <p role="alert" className="auth-error">{ordersError}</p> : selectedOrder ? <>
+          <div><p role="alert" className="auth-error">{ordersError}</p><button type="button" className="text-button" onClick={()=>requestedOrderId && void openOrder(requestedOrderId)} disabled={!requestedOrderId}>Try again</button></div> : selectedOrder ? <>
             <h2>{selectedOrder.product_name}</h2>
             <div className="order-card">
               <div className="order-product"><span className="small-art">{selectedOrder.product_emoji}</span>
