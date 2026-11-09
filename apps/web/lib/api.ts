@@ -30,6 +30,20 @@ export type GiftResponse = {
   context: GiftContext | null;
   notice: string;
 };
+export type OrderSummary = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_emoji: string;
+  price_minor: number;
+  currency: string;
+  status: string;
+  created_at: string;
+};
+export type OrderDetail = OrderSummary & {
+  paypal_order_id: string | null;
+  paypal_capture_id: string | null;
+};
 export type Recipient = {
   id: string;
   name: string;
@@ -49,7 +63,7 @@ export type Occasion = {
 };
 
 export async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders(/^\/(recipients|occasions|auth\/me)(\/|$)/.test(path))};
+  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders(/^\/(recipients|occasions|orders|checkout\/paypal|auth\/me)(\/|$)/.test(path))};
   const response = await fetch(`/backend/api/v1${path}`, {method, headers, ...(body === undefined ? {} : {body: JSON.stringify(body)}), cache: "no-store"});
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

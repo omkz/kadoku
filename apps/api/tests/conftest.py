@@ -33,3 +33,32 @@ def client(database):
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
+
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from app.core import auth as auth_module
+
+
+@pytest.fixture
+def token_factory(monkeypatch):
+    """Real EdDSA JWTs; mock only the JWKS network fetch, not auth decisions."""
+    private = Ed25519PrivateKey.generate()
+    public = private.public_key()
+    monkeypatch.setattr(auth_module, "_jwks_client", lambda issuer: SimpleNamespace(
+        get_signing_key_from_jwt=lambda token: SimpleNamespace(key=public),
+    ))
+
+    def build(**overrides):
+        now = datetime.now(timezone.utc)
+        claims = {
+            "sub": "test-user-a", "iss": "http://localhost:3000",
+            "aud": "http://localhost:3000", "iat": now,
+            "exp": now + timedelta(minutes=15),
+        }
+        claims.update(overrides)
+        return jwt.encode(claims, private, algorithm="EdDSA", headers={"kid": "local-test-key"})
+
+    return build

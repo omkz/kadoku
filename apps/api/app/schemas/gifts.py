@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -101,3 +102,18 @@ class CheckoutCreated(BaseModel):
 class CheckoutCapture(BaseModel):
     order_id: str
     paypal_order_id: str
+
+class OrderSummary(BaseModel):
+    id: str
+    product_id: str
+    product_name: str
+    product_emoji: str
+    price_minor: int
+    currency: str
+    status: str
+    created_at: datetime
+
+
+class OrderDetail(OrderSummary):
+    paypal_order_id: str | None = None
+    paypal_capture_id: str | None = None

@@ -44,9 +44,10 @@ def test_product_catalog(client):
     assert all(item["stock"] > 0 for item in data)
 
 
-def test_checkout_requires_config(client):
+def test_checkout_requires_config(client, token_factory):
     product = client.get("/api/v1/products").json()[0]
-    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]})
+    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]},
+                           headers={"Authorization": f"Bearer {token_factory()}"})
     assert response.status_code == 503
 
 
