@@ -3,6 +3,18 @@ from app.models import Order, Product
 from app.routers import checkout
 
 
+SHIP_TO = {
+    "full_name": "Demo Recipient",
+    "address_line_1": "123 Example Street",
+    "address_line_2": "Apt 4",
+    "city": "Surakarta",
+    "region": "Central Java",
+    "postal_code": "57111",
+    "country": "Indonesia",
+    "phone_country_code": "+62",
+    "phone_number": "81234567890",
+}
+
 def auth(token_factory, user="test-user-a"):
     return {"Authorization": f"Bearer {token_factory(sub=user)}"}
 
@@ -36,7 +48,7 @@ def fake_paypal(monkeypatch):
 def test_checkout_and_order_history_require_login(client, database):
     product = client.get("/api/v1/products").json()[0]
     assert client.post("/api/v1/checkout/paypal/orders",
-                       json={"product_id": product["id"]}).status_code == 401
+                       json={"product_id": product["id"], "shipping_address":SHIP_TO}).status_code == 401
     assert client.post("/api/v1/checkout/paypal/capture",
                        json={"order_id": "any", "paypal_order_id": "any"}).status_code == 401
     assert client.get("/api/v1/orders").status_code == 401
@@ -55,7 +67,7 @@ def test_order_history_owner_isolation_and_price_snapshot(client, database, monk
     b = auth(token_factory, "user-b")
 
     create = lambda headers: client.post("/api/v1/checkout/paypal/orders",
-                                         json={"product_id": product["id"]}, headers=headers)
+                                         json={"product_id": product["id"], "shipping_address":SHIP_TO}, headers=headers)
     first = create(a)
     second = create(a)
     other = create(b)
@@ -86,6 +98,7 @@ def test_order_history_owner_isolation_and_price_snapshot(client, database, monk
     assert b_list.status_code == 200
     assert [order["id"] for order in b_list.json()] == [other_id]
     assert client.get("/api/v1/orders/" + first_id, headers=b).status_code == 404
+    assert client.get("/api/v1/orders/" + other_id, headers=a).status_code == 404
     assert client.get("/api/v1/orders/" + first_id, headers=a).status_code == 200
 
     payload = {"order_id": first_id, "paypal_order_id": "PP-" + first_id}
@@ -105,6 +118,7 @@ def test_order_history_owner_isolation_and_price_snapshot(client, database, monk
     assert detail.json()["paypal_capture_id"] == "CAPTURE-" + first_id
     assert detail.json()["paypal_order_id"] == "PP-" + first_id
     assert detail.json()["price_minor"] == 6800
+    assert detail.json()["shipping_address"] == SHIP_TO
     assert client.get("/api/v1/orders/" + other_id, headers=a).status_code == 404
 
 
@@ -119,7 +133,7 @@ def test_cancelled_checkout_is_owner_scoped_idempotent_and_never_overwrites_paid
     user_a = auth(token_factory, "user-a")
     user_b = auth(token_factory, "user-b")
     create = lambda: client.post("/api/v1/checkout/paypal/orders",
-                                 json={"product_id": product["id"]}, headers=user_a)
+                                 json={"product_id": product["id"], "shipping_address":SHIP_TO}, headers=user_a)
     abandoned = create()
     completed = create()
     assert abandoned.status_code == completed.status_code == 200
