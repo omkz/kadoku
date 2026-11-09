@@ -14,3 +14,13 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck Next.js
         run: npm run typecheck:web
+      - name: Build Next.js for production
+        # These are throwaway CI values, never live credentials or a real database.
+        env:
+          API_PROXY_TARGET: http://127.0.0.1:8000
+          AUTH_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/kadoku_ci
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: ci-only-do-not-use-this-value-in-production-1234
+          GUEST_COOKIE_SECRET: ci-only-do-not-use-this-value-in-production-5678
+          NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED: "false"
+        run: npm run build:web
