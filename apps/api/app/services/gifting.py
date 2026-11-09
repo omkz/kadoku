@@ -101,7 +101,8 @@ async def understand_request(prompt: str, ai_model: str,
         return base, "rules-fallback"
 
 
-def recommend(products: list[Product], intent: Intent, count: int = 3) -> list[tuple[Product,str,str]]:
+def recommend(products: list[Product], intent: Intent, count: int = 3,
+              prefer_personal: bool = False) -> list[tuple[Product,str,str]]:
     """Hard constraints first, then grounded scoring plus category diversity."""
     eligible = []
     for p in products:
@@ -117,11 +118,14 @@ def recommend(products: list[Product], intent: Intent, count: int = 3) -> list[t
         occasion_score = 3 if intent.occasion and intent.occasion in p.occasions else 0
         price_score = 2 if intent.budget_minor and p.price_minor <= int(intent.budget_minor * .85) else 0
         specificity = 1 if "personal" in p.styles else 0
-        score = interest_score + occasion_score + price_score + specificity
+        personal_score = 16 if prefer_personal and 'personal' in p.styles else 0
+        score = interest_score + occasion_score + price_score + specificity + personal_score
         matched = ", ".join(sorted(interest_matches))
         reason = f"Matches their interest in {matched}." if matched else "A versatile gift worth considering for the occasion."
         if intent.budget_minor is not None:
             reason += " Fits your stated budget."
+        if personal_score:
+            reason += " Adds a personal touch."
         eligible.append((p, score, reason))
     eligible.sort(key=lambda row: (-row[1], row[0].price_minor, row[0].id))
     results: list[tuple[Product,str,str]] = []
