@@ -2,6 +2,7 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
+import Image from "next/image";
 
 type Screen = "home" | "ideas" | "details" | "checkout" | "people";
 const samplePrompts = [
@@ -9,6 +10,30 @@ const samplePrompts = [
   {emoji:"💜", label:"Anniversary", prompt:"I'm looking for an anniversary gift for my partner. They love art and cozy evenings. Budget $80."},
   {emoji:"✨", label:"Just because", prompt:"I want to surprise my best friend who loves books and coffee. Budget $50."},
 ];
+
+/** Optional studio illustration with the original emoji as a safe fallback. */
+function ProductArt({name, emoji, imageUrl, className, sizes}: {
+  name: string;
+  emoji: string;
+  imageUrl: string | null;
+  className: string;
+  sizes: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [imageUrl]);
+  return <div className={className}>
+    {imageUrl && !failed
+      ? <Image
+          src={imageUrl}
+          alt={`AI-generated concept illustration of ${name}`}
+          fill
+          sizes={sizes}
+          className="product-art-image"
+          onError={() => setFailed(true)}
+        />
+      : <span aria-hidden="true">{emoji}</span>}
+  </div>;
+}
 
 export default function KadokuApp() {
   const {data: session} = authClient.useSession();
@@ -216,7 +241,7 @@ export default function KadokuApp() {
         <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"I found a few thoughtful ideas."} {(response?.recommendations.length||0)>0?"Here’s the one I’d pick.":""}</p></div></div>
         <div className="gift-scroller" aria-label="Gift recommendations">
           {(response?.recommendations||[]).map((item,index)=><article className="gift-card" key={item.id}>
-            <div className={`gift-art art-${index%3}`}><span>{item.emoji}</span></div>
+            <ProductArt name={item.name} emoji={item.emoji} imageUrl={item.image_url} className={`gift-art art-${index%3}`} sizes="(max-width: 520px) 70vw, 258px"/>
             <div className="gift-meta"><span className={index===0?"top-pick":"alternate"}>{index===0?"✦ ":""}{item.label}</span><b>{dollars(item.price_minor)}</b></div>
             <h3>{item.name}</h3><p>{item.reason}</p>
             <button className="gift-choose" onClick={()=>choose(item)}>Choose this gift <span>↗</span></button>
@@ -233,7 +258,7 @@ export default function KadokuApp() {
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
         <div className="inside-header"><button className="back-button" onClick={()=>setScreen("ideas")}>←</button><span>Your gift</span><span>✦</span></div>
-        <div className="detail-art">{gift.emoji}</div>
+        <ProductArt name={gift.name} emoji={gift.emoji} imageUrl={gift.image_url} className="detail-art" sizes="(max-width: 520px) 100vw, 420px"/>
         <div className="detail-heading"><div><span className="detail-label">{gift.label}</span><h2>{gift.name}</h2></div><strong>{dollars(gift.price_minor)}</strong></div>
         <div className="why-card"><span>✦</span><div><b>Why this gift?</b><p>{gift.reason}</p></div></div>
         <label className="form-label" htmlFor="gift-note">Add a personal message <small>(optional)</small></label>
