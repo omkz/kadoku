@@ -50,6 +50,7 @@ export default function PaymentReturn() {
     <h1>{status==="loading" ? "Confirming payment" : status==="paid" ? "Sandbox payment complete" : "Payment not confirmed"}</h1>
     <p>{detail}</p>
     {status==="error" && <button className="primary-action" onClick={()=>setRetry(value=>value+1)}>Try confirming again</button>}
+    {status==="paid" && <p><Link href="/?view=orders">View My Orders</Link></p>}
     <Link href="/">Back to Kadoku</Link>
   </main>;
 }

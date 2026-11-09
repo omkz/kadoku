@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from decimal import Decimal, InvalidOperation
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from app.core.auth import optional_user
+from app.core.auth import required_user
 from app.db.session import get_db
 from app.integrations.paypal import PayPalClient
-from app.models import Order, PaymentEvent
+from app.models import Order, PaymentEvent, Product
 from app.repositories.catalog import get_product
-from app.schemas.gifts import CheckoutStart, CheckoutCreated, CheckoutCapture
+from app.schemas.gifts import CheckoutStart, CheckoutCreated, CheckoutCapture, OrderSummary, OrderDetail
 
 router = APIRouter(prefix="/api/v1", tags=["checkout"])
 
@@ -71,9 +72,81 @@ def approval_link(response: dict) -> str | None:
                 continue
     return None
 
+
+
+def order_summary(order: Order, product: Product) -> dict:
+    """Return the user's order with its recorded price, not today's catalog price."""
+    return {
+        "id": order.id,
+        "product_id": order.product_id,
+        "product_name": product.name,
+        "product_emoji": product.emoji,
+        "price_minor": order.price_snapshot_minor,
+        "currency": order.currency,
+        "status": order.status,
+        "created_at": order.created_at,
+    }
+
+
+@router.get("/orders", response_model=list[OrderSummary])
+def my_orders(user_id: str = Depends(required_user), db: Session = Depends(get_db)):
+    """Newest 100 orders owned by the authenticated user (guest orders are excluded)."""
+    rows = db.execute(
+        select(Order, Product)
+        .join(Product, Product.id == Order.product_id)
+        .where(Order.user_id == user_id)
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(100)
+    ).all()
+    return [order_summary(order, product) for order, product in rows]
+
+
+@router.get("/orders/{order_id}", response_model=OrderDetail)
+def my_order(order_id: str, user_id: str = Depends(required_user),
+             db: Session = Depends(get_db)):
+    row = db.execute(
+        select(Order, Product)
+        .join(Product, Product.id == Order.product_id)
+        .where(Order.id == order_id, Order.user_id == user_id)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Order not found")
+    order, product = row
+    return {
+        **order_summary(order, product),
+        "paypal_order_id": order.paypal_order_id,
+        "paypal_capture_id": order.paypal_capture_id,
+    }
+
+@router.post("/orders/{order_id}/cancel")
+def cancel_my_order(order_id: str, user_id: str = Depends(required_user),
+                    db: Session = Depends(get_db)):
+    """Record the buyer's cancellation of an un-captured Sandbox checkout.
+
+    An atomic status update prevents a late cancellation from overwriting a
+    completed capture. This is *local* checkout cancellation, not a PayPal refund.
+    """
+    result = db.execute(
+        update(Order)
+        .where(Order.id == order_id, Order.user_id == user_id,
+               Order.status == "approval_pending")
+        .values(status="cancelled")
+    )
+    if result.rowcount:
+        db.commit()
+        return {"order_id": order_id, "status": "cancelled"}
+    db.rollback()
+    order = db.get(Order, order_id)
+    if order is None or order.user_id != user_id:
+        raise HTTPException(404, "Order not found")
+    if order.status == "cancelled":
+        return {"order_id": order_id, "status": "cancelled"}
+    raise HTTPException(409, "This order cannot be cancelled from checkout")
+
+
 @router.post("/checkout/paypal/orders", response_model=CheckoutCreated)
 async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_db),
-                              user_id: str | None = Depends(optional_user)):
+                              user_id: str = Depends(required_user)):
     paypal = PayPalClient()
     product = get_product(db, payload.product_id)
     if not product or not product.active or product.stock <= 0 or product.price_minor <= 0:
@@ -96,11 +169,12 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
 
 
 @router.post("/checkout/paypal/capture")
-async def capture_paypal_order(payload: CheckoutCapture, db: Session = Depends(get_db)):
-    # A local order ID is a bearer of limited status info; capture still requires actual
-    # PayPal buyer approval. No sensitive order details returned to the caller.
+async def capture_paypal_order(payload: CheckoutCapture, db: Session = Depends(get_db),
+                               user_id: str = Depends(required_user)):
+    # Both approval and ownership are required. A PayPal token alone cannot
+    # capture or read another user's order.
     order = db.get(Order, payload.order_id)
-    if not order or order.paypal_order_id != payload.paypal_order_id:
+    if not order or order.user_id != user_id or order.paypal_order_id != payload.paypal_order_id:
         raise HTTPException(404, "Order not found")
     if order.status == "paid":
         return {"status": "paid", "order_id": order.id}

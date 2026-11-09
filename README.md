@@ -117,6 +117,17 @@ Create a **Sandbox** REST application in PayPal Developer and populate `PAYPAL_C
 
 This implementation uses the Orders API `payer-action` redirect and PayPal's approval return page, not the JavaScript SDK buttons yet. Do not call it production-ready. A shipping/tax quote, fulfillment, stock reservations, refunds, fraud review, and stronger abuse prevention are required before real commerce.
 
+## Authenticated checkout and My Orders
+
+**A signed-in user is required to pay with PayPal Sandbox.** Gift discovery remains available to guests. If a guest selects a product and presses **Continue to checkout**, Kadoku opens sign-in; the current gift and note remain in place. For a full-page Google OAuth redirect, a short-lived tab-local pending selection is recovered (no payment credentials or server-authoritative prices are stored).
+
+- Only the authenticated owner can create, capture, cancel, list, or view their orders.
+- **My Orders** in bottom navigation lists the user's latest 100 orders. Select an item for its detail, historical price, payment status, and Sandbox PayPal IDs.
+- Backend endpoints: `GET /api/v1/orders`, `GET /api/v1/orders/{order_id}`, and `POST /api/v1/orders/{order_id}/cancel`; all require a valid Bearer JWT. A payment return cannot capture a different user's order even with its PayPal token.
+- The cancellation endpoint only marks an **uncaptured, approval-pending** order as locally cancelled; it never refunds or cancels already captured PayPal payments.
+- **Legacy guest orders** (`user_id IS NULL`) remain unassigned and are **not automatically visible** to newly signed-in users. No migration or ownership guessing is performed.
+- Product name and emoji currently come from the catalog; the order amount and currency are preserved from checkout-time snapshots. This remains a **Sandbox-only demo**, not commercial fulfillment.
+
 ## Automated tests
 
 ```bash
