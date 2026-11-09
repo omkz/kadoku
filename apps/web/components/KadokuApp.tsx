@@ -122,7 +122,7 @@ export default function KadokuApp() {
       : scroller.clientWidth;
     scroller.scrollBy({
       left: direction * step,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   }
 
