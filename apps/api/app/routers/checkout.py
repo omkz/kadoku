@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from decimal import Decimal, InvalidOperation
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from app.core.auth import required_user
 from app.db.session import get_db
@@ -118,6 +118,32 @@ def my_order(order_id: str, user_id: str = Depends(required_user),
         "paypal_capture_id": order.paypal_capture_id,
     }
 
+@router.post("/orders/{order_id}/cancel")
+def cancel_my_order(order_id: str, user_id: str = Depends(required_user),
+                    db: Session = Depends(get_db)):
+    """Record the buyer's cancellation of an un-captured Sandbox checkout.
+
+    An atomic status update prevents a late cancellation from overwriting a
+    completed capture. This is *local* checkout cancellation, not a PayPal refund.
+    """
+    result = db.execute(
+        update(Order)
+        .where(Order.id == order_id, Order.user_id == user_id,
+               Order.status == "approval_pending")
+        .values(status="cancelled")
+    )
+    if result.rowcount:
+        db.commit()
+        return {"order_id": order_id, "status": "cancelled"}
+    db.rollback()
+    order = db.get(Order, order_id)
+    if order is None or order.user_id != user_id:
+        raise HTTPException(404, "Order not found")
+    if order.status == "cancelled":
+        return {"order_id": order_id, "status": "cancelled"}
+    raise HTTPException(409, "This order cannot be cancelled from checkout")
+
+
 @router.post("/checkout/paypal/orders", response_model=CheckoutCreated)
 async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_db),
                               user_id: str = Depends(required_user)):
@@ -146,7 +172,7 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
 async def capture_paypal_order(payload: CheckoutCapture, db: Session = Depends(get_db),
                                user_id: str = Depends(required_user)):
     # Both approval and ownership are required. A PayPal token alone cannot
-    # capture or read another user\'s order.
+    # capture or read another user's order.
     order = db.get(Order, payload.order_id)
     if not order or order.user_id != user_id or order.paypal_order_id != payload.paypal_order_id:
         raise HTTPException(404, "Order not found")
