@@ -43,11 +43,11 @@ class PayPalClient:
             "purchase_units": [{
                 "reference_id": local_id,
                 "custom_id": local_id,
-                "amount": {"currency_code": "USD", "value": f"{amount_minor/100:.2f}"},
+                "amount": {"currency_code": "USD", "value": f"{amount_minor // 100}.{amount_minor % 100:02d}"},
             }],
             "payment_source": {"paypal": {"experience_context": {
                 "return_url": f"{url}/checkout/return?order_id={local_id}",
-                "cancel_url": f"{url}/?payment=cancelled",
+                "cancel_url": f"{url}/checkout/cancel?order_id={local_id}",
                 "user_action": "PAY_NOW", "shipping_preference": "NO_SHIPPING",
             }}},
         }, request_id="create-"+local_id)
