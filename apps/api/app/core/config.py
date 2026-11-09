@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     ai_model: str = ""  # e.g. openai/gpt-5-mini, gemini/gemini-2.5-flash
     ai_timeout_seconds: float = Field(default=12, gt=0, le=30)
     ai_max_output_tokens: int = Field(default=240, ge=80, le=512)
+    ai_rerank_enabled: bool = False  # optional second LiteLLM call per recommendation
+    ai_rerank_timeout_seconds: float = Field(default=8, gt=0, le=20)
     paypal_client_id: str = ""
     paypal_client_secret: str = ""
     paypal_webhook_id: str = ""
