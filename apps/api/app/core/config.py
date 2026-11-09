@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     guest_quota_secret: str = ""  # required for quota when exposed publicly
     guest_recommendations_daily: int = 1
     member_recommendations_daily: int = 5
+    dev_bypass_recommendation_quota: bool = False  # explicit opt-in; ignored outside development
     ai_model: str = ""  # e.g. openai/gpt-5-mini, gemini/gemini-2.5-flash
     ai_timeout_seconds: float = Field(default=12, gt=0, le=30)
     ai_max_output_tokens: int = Field(default=240, ge=80, le=512)
