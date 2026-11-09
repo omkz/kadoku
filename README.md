@@ -65,7 +65,7 @@ API health: <http://localhost:8000/api/health>  ·  OpenAPI: <http://localhost:8
 Install AI support when you have a provider API key:
 
 ```bash
-uv pip install -e '.[ai]'
+uv sync --extra ai
 # Set AI_MODEL=provider/model and the matching provider API key in apps/api/.env
 ```
 
@@ -73,20 +73,41 @@ Without an AI key, the application still works in **rules-based demo mode**. The
 
 ### 3. Next.js and Better Auth
 
-From the **repository root**, install dependencies:
+From the **repository root**, use **pnpm inside the web app**:
 
 ```bash
-npm install
 cd apps/web
 cp .env.example .env
-# Update AUTH_DATABASE_URL and BETTER_AUTH_SECRET (at least 32 random characters).
-# Set GUEST_COOKIE_SECRET to EXACTLY the value of FastAPI's GUEST_QUOTA_SECRET.
-# Match BETTER_AUTH_URL in both services (default http://localhost:3000).
-npx auth@latest migrate --yes
-npm run dev
+pnpm install
+# Set AUTH_DATABASE_URL, BETTER_AUTH_URL and a random BETTER_AUTH_SECRET in .env.
+# Set GUEST_COOKIE_SECRET to the API's GUEST_QUOTA_SECRET.
+pnpm dlx auth@latest migrate --yes
+pnpm dev
 ```
 
-Open <http://localhost:3000>. Google OAuth is optional and will not be offered until client/server Google credentials and the public feature flag are configured. The email/password flow can work without Google OAuth.
+Open <http://localhost:3000>. Email/password sign-in works without Google OAuth.
+
+#### Google sign-in (optional)
+
+Create an OAuth Client ID of type **Web application** in Google Cloud Console. Add this **Authorized redirect URI** for local development:
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
+Set these values in `apps/web/.env` (never commit credentials):
+
+```dotenv
+GOOGLE_CLIENT_ID=your-google-web-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=true
+```
+
+Restart `pnpm dev` after changing environment variables. In production, register the corresponding HTTPS redirect URI, e.g. `https://your-domain.com/api/auth/callback/google`, and set `BETTER_AUTH_URL=https://your-domain.com`. Leave the public Google button disabled if the server credentials are not configured.
+
+**JWT integration:** Better Auth issues short-lived JWTs using the JWT plugin's JWKS. FastAPI verifies the EdDSA signature, expiration, issuer and audience, and exposes `GET /api/v1/auth/me` as an authentication smoke test. Better Auth manages the web session; don't pass session cookies directly to FastAPI.
+
+**Before production:** configure email verification/delivery for password accounts, anti-abuse controls, and test OAuth, session expiration and logout with real credentials. The backend tests cover JWT validation, not Google's external OAuth service.
 
 > The Better Auth migration creates its authentication tables in PostgreSQL. Alembic owns the Kadoku application tables. Both can coexist in the same database.
 
@@ -100,11 +121,10 @@ This implementation uses the Orders API `payer-action` redirect and PayPal's app
 
 ```bash
 cd apps/api
-source .venv/bin/activate
-pytest -q
+uv run --extra test pytest -q
 ```
 
-No PayPal network calls are made in unit tests. End-to-end PayPal approval requires your own sandbox credentials and manual buyer interaction.
+With uv, no manual venv activation is required: use `uv sync` and `uv run` consistently. No PayPal network calls are made in unit tests. End-to-end PayPal approval requires your own sandbox credentials and manual buyer interaction.
 
 ## Architecture
 

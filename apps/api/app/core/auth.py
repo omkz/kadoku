@@ -1,30 +1,48 @@
-"""Verify Better Auth JWT plugin tokens using its public JWKS endpoint."""
+"""Verify Better Auth session JWTs with pinned EdDSA JWKS keys."""
+from functools import lru_cache
+
 from fastapi import Depends, Header, HTTPException
 import jwt
 from jwt import PyJWKClient
+
 from app.core.config import get_settings
+
+
+@lru_cache(maxsize=4)
+def _jwks_client(issuer: str) -> PyJWKClient:
+    # Reuse the client so JWKS cache/rotation handling is effective per process.
+    return PyJWKClient(f"{issuer}/api/auth/jwks", lifespan=300)
 
 
 def optional_user(authorization: str | None = Header(default=None)) -> str | None:
     if not authorization:
         return None
-    if not authorization.startswith("Bearer "):
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(401, "Expected a Bearer token")
-    token = authorization[7:]
     issuer = get_settings().better_auth_url.rstrip("/")
     try:
-        jwks_client = PyJWKClient(f"{issuer}/api/auth/jwks", cache_keys=True, lifespan=300)
-        key = jwks_client.get_signing_key_from_jwt(token)
-        decoded = jwt.decode(token, key.key, algorithms=["EdDSA", "ES256", "RS256", "PS256"], audience=issuer, issuer=issuer)
-        user_id = decoded.get("sub")
+        signing_key = _jwks_client(issuer).get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["EdDSA"],
+            audience=issuer,
+            issuer=issuer,
+            options={"require": ["exp", "iss", "aud", "sub"]},
+        )
+        user_id = claims["sub"]
         if not isinstance(user_id, str) or not user_id:
-            raise ValueError("Missing subject")
+            raise ValueError("Invalid subject")
         return user_id
-    except Exception as exc:
+    except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
         raise HTTPException(401, "Invalid or expired session token") from exc
+    except Exception as exc:
+        # JWKS temporarily unreachable or malformed. Fail closed.
+        raise HTTPException(401, "Unable to verify session token") from exc
 
 
 def required_user(user_id: str | None = Depends(optional_user)) -> str:
     if not user_id:
-        raise HTTPException(401, "Sign in to save recipients and occasions")
+        raise HTTPException(401, "Sign in to access your account")
     return user_id
