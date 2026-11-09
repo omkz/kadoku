@@ -38,7 +38,7 @@ export type Occasion = {
 };
 
 export async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders()};
+  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders(/^\/(recipients|occasions|auth\/me)(\/|$)/.test(path))};
   const response = await fetch(`/backend/api/v1${path}`, {method, headers, ...(body === undefined ? {} : {body: JSON.stringify(body)}), cache: "no-store"});
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
