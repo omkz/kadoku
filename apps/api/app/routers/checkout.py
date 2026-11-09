@@ -12,26 +12,71 @@ router = APIRouter(prefix="/api/v1", tags=["checkout"])
 
 
 def verified_capture(data: dict, expected_minor: int, currency: str) -> str | None:
-    if data.get("status") != "COMPLETED":
-        return None
-    for unit in data.get("purchase_units", []):
-        for capture in unit.get("payments", {}).get("captures", []):
-            amount = capture.get("amount", {})
-            try:
-                minor = int(Decimal(str(amount.get("value", "0"))) * 100)
-            except (TypeError, ValueError, InvalidOperation):
-                continue
-            if capture.get("status") == "COMPLETED" and minor == expected_minor and amount.get("currency_code") == currency:
-                return capture.get("id")
-    return None
+    """Accept only the one completed capture for the expected order total.
 
+    Avoid Decimal->int truncation: a fractional cent is not a valid USD
+    capture even if its integer cents would match.
+    """
+    if not isinstance(data, dict) or data.get("status") != "COMPLETED":
+        return None
+    units = data.get("purchase_units")
+    if not isinstance(units, list) or len(units) != 1:
+        return None
+    payments = units[0].get("payments", {}) if isinstance(units[0], dict) else {}
+    captures = payments.get("captures") if isinstance(payments, dict) else None
+    if not isinstance(captures, list) or len(captures) != 1:
+        return None
+    capture = captures[0]
+    if not isinstance(capture, dict) or capture.get("status") != "COMPLETED":
+        return None
+    amount = capture.get("amount")
+    if not isinstance(amount, dict) or amount.get("currency_code") != currency:
+        return None
+    capture_id = capture.get("id")
+    if not isinstance(capture_id, str) or not capture_id:
+        return None
+    try:
+        cents = Decimal(str(amount["value"])) * 100
+    except (KeyError, TypeError, ValueError, InvalidOperation):
+        return None
+    if not cents.is_finite() or cents != expected_minor:
+        return None
+    return capture_id
+
+
+def approval_link(response: dict) -> str | None:
+    """Follow PayPal's URL, never an untrusted or non-Sandbox redirect."""
+    from urllib.parse import urlsplit
+
+    if not isinstance(response, dict):
+        return None
+    links = response.get("links")
+    if not isinstance(links, list):
+        return None
+    for rel in ("payer-action", "approve"):
+        for link in links:
+            if not isinstance(link, dict) or link.get("rel") != rel:
+                continue
+            href = link.get("href")
+            if not isinstance(href, str):
+                continue
+            try:
+                parsed = urlsplit(href)
+                valid_host = parsed.hostname == "sandbox.paypal.com" or (
+                    parsed.hostname is not None and parsed.hostname.endswith(".sandbox.paypal.com")
+                )
+                if parsed.scheme == "https" and valid_host and parsed.username is None and parsed.password is None:
+                    return href
+            except ValueError:
+                continue
+    return None
 
 @router.post("/checkout/paypal/orders", response_model=CheckoutCreated)
 async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_db),
                               user_id: str | None = Depends(optional_user)):
     paypal = PayPalClient()
     product = get_product(db, payload.product_id)
-    if not product or not product.active or product.stock <= 0:
+    if not product or not product.active or product.stock <= 0 or product.price_minor <= 0:
         raise HTTPException(409, "Product unavailable")
     if not product.demo_only or product.currency != "USD":
         raise HTTPException(409, "Sandbox checkout supports USD demo products only")
@@ -41,8 +86,8 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
     db.commit()
     db.refresh(order)
     response = await paypal.create_order(order.id, order.price_snapshot_minor)
-    approval_url = next((link["href"] for link in response.get("links", []) if link.get("rel") == "payer-action"), None)
-    if not approval_url or not response.get("id"):
+    approval_url = approval_link(response)
+    if not approval_url or not isinstance(response.get("id"), str) or not response["id"] or len(response["id"]) > 64:
         raise HTTPException(502, "PayPal did not return a buyer approval link")
     order.paypal_order_id = response["id"]
     order.status = "approval_pending"
