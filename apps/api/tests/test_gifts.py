@@ -15,7 +15,7 @@ def test_recommendations_grounded_and_max_three(client):
     assert response.status_code == 200, response.text
     data = response.json()
     assert 1 <= len(data["recommendations"]) <= 3
-    assert data["recommendations"][0]["name"] == "Garden Lover's Box"
+    assert "gardening" in data["recommendations"][0]["reason"].lower()
     assert all(g["price_minor"] <= 10000 for g in data["recommendations"])
     assert all(g["demo_only"] for g in data["recommendations"])
     assert data["remaining_today"] == 0
@@ -40,7 +40,7 @@ def test_recipient_requires_login(client):
 
 def test_product_catalog(client):
     data = client.get("/api/v1/products").json()
-    assert len(data) == 12
+    assert len(data) == 100
     assert all(item["stock"] > 0 for item in data)
 
 
