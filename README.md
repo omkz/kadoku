@@ -16,7 +16,7 @@
 ## What works now
 
 - Conversation-first homepage with voice-capable input; **no catalog-first homepage**.
-- End-to-end recommendation request to FastAPI, grounded in 12 **demo-only** products, showing up to three swipeable cards with one highlighted pick.
+- End-to-end recommendation request to FastAPI, grounded in 100 **demo-only** products, showing up to three swipeable cards with one highlighted pick.
 - Budget, interests, occasion filtering and ranking; different product categories when possible.
 - Guest recommendation quota enforced on the backend; signed HttpOnly guest identity cookie issued by Next.js. Members have a larger daily quota.
 - Better Auth wiring, JWT/JWKS validation in FastAPI, private recipient and birthday endpoints, My People form.
@@ -34,13 +34,23 @@ On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it
 - **Every recommendation/refinement call consumes the existing daily quota**. Guests are currently limited to one call/day and need to sign in to refine further. This flow is not unlimited chat.
 - No LLM-generated product or price is accepted; recommendations always come from the catalog.
 
-## Demo product photos (5-product pilot)
+## Demo catalog (100 products) and product images
 
 Five AI-generated **concept illustrations** are committed as compressed WebP assets (600×600 px) under `apps/web/public/products/`. They are matched to the existing demo catalog entries: Garden Lover's Box, Artisan Coffee Ritual, Handmade Tea Box, Book Lover Bundle, and Cozy Evening Box.
 
 Product `image_url` is optional. Recommendation and gift-detail cards render the catalog image with Next.js `Image`; when the image URL is absent or fails, Kadoku displays its branded `/products/default.webp` illustration (a compressed 256×256 WebP), then falls back to the product emoji only if even the local default image fails to load. The default is explicitly labeled *Illustrative image* in the artwork and is **not** a real product photo. No database migration or seed changes are needed for this presentation fallback.
 
-For an **existing database**, run the new Alembic migration and rerun the seed command after checking out this branch:
+
+
+The 100-item demo set covers personalized gifts, home, tech, creative hobbies,
+coffee/tea/food, books, wellness, travel, accessories and music. Its prices and
+stock are **fictional USD test data** and every new item has `demo_only = true`.
+The products use the existing 10-interest extraction vocabulary so no AI or
+ranking changes are necessary. Adding more items does not by itself prove
+recommendation relevance; the tests verify hard constraints and seed behavior,
+not subjective gift quality.
+
+For an **existing database**, run any outstanding Alembic migrations and rerun the seed command after checking out this branch:
 
 ```bash
 cd apps/api
@@ -48,7 +58,7 @@ uv run alembic upgrade head
 uv run python -m app.seed
 ```
 
-The seed operation only fills missing image paths on known demo products; it does **not** change existing product prices, stock, or custom image URLs. A fresh database receives all 12 products with five image paths.
+The idempotent seed adds **88 curated new demo products** to an existing 12-item catalog, or all 100 items to a blank database. Existing product IDs, prices, stock, images, and linked orders remain untouched; no destructive reseeding. New products have `image_url = NULL` and render `/products/default.webp`. Five original products retain their studio concept photos. New demo items have stable UUID5 IDs to prevent re-creation after a store-side rename. The seed reports how many rows were added and returns 0 on a repeated run.
 
 **Note:** These AI-generated photos are illustrative visuals, not verified supplier product photos. Real-product descriptions, pictures, inventory, sourcing, taxes, delivery, and returns must be validated before accepting live payments.
 
