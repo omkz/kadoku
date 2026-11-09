@@ -67,6 +67,7 @@ export async function api<T>(path: string, method = "GET", body?: unknown): Prom
   const response = await fetch(`/backend/api/v1${path}`, {method, headers, ...(body === undefined ? {} : {body: JSON.stringify(body)}), cache: "no-store"});
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 429) throw new Error("Daily recommendation limit reached. Please try again tomorrow.");
     throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${response.status})`);
   }
   return data as T;
