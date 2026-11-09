@@ -37,7 +37,7 @@ function ProductArt({name, emoji, imageUrl, className, sizes}: {
   }, [imageUrl]);
 
   const hasProductImage = !!imageUrl && failedImageUrl !== imageUrl;
-  const src = hasProductImage ? imageUrl : DEFAULT_PRODUCT_IMAGE;
+  const src = imageUrl && failedImageUrl !== imageUrl ? imageUrl : DEFAULT_PRODUCT_IMAGE;
   return <div className={className}>
     {!defaultFailed
       ? <Image
