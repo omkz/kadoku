@@ -14,7 +14,7 @@ export default function KadokuApp() {
   const {data: session} = authClient.useSession();
   const [screen, setScreen] = useState<Screen>("home");
   const [prompt, setPrompt] = useState("");
-  const [submitted, setSubmitted] = useState("");
+  const [conversation, setConversation] = useState<{text:string;summary:string}[]>([]);
   const [response, setResponse] = useState<GiftResponse|null>(null);
   const [gift, setGift] = useState<Gift|null>(null);
   const [giftNote, setGiftNote] = useState("");
@@ -62,19 +62,30 @@ export default function KadokuApp() {
     try {r.start();setListening(true);} catch {setError("Couldn't start microphone.");}
   }
 
-  async function findGifts() {
-    if (prompt.trim().length < 10) {setError("Tell me a little more about the recipient (at least 10 characters).");return;}
+  async function findGifts(override?: string) {
+    if (busy) return;
+    const message = (override ?? prompt).trim();
+    const refining = screen === "ideas" && !!response?.context;
+    if (message.length < (refining ? 2 : 10)) {
+      setError(refining ? "Tell me what you'd like to change." : "Tell me a little more about the recipient (at least 10 characters).");
+      return;
+    }
     setBusy(true);setError("");
     try {
-      // Ensure the signed guest identity cookie exists before our backend quota check.
       if (!session?.user) {
         const guest = await fetch("/api/guest",{credentials:"same-origin"});
         if (!guest.ok) throw new Error("Guest sessions are not configured.");
       }
       const result = await api<GiftResponse>("/gifts/recommendations", "POST", {
-        prompt: prompt.trim(), ...(selectedRecipient ? {recipient_id:selectedRecipient} : {}),
+        prompt: message,
+        ...(selectedRecipient ? {recipient_id:selectedRecipient} : {}),
+        ...(refining ? {context: response!.context} : {}),
       });
-      setResponse(result);setSubmitted(prompt.trim());setScreen("ideas");
+      setResponse(result);
+      const turn = {text:message, summary:result.summary};
+      setConversation(refining ? [...conversation,turn].slice(-5) : [turn]);
+      setPrompt("");
+      setScreen("ideas");
     } catch (e) {setError(e instanceof Error?e.message:"Something went wrong.");}
     finally {setBusy(false);}
   }
@@ -118,8 +129,8 @@ export default function KadokuApp() {
   }
 
   function choose(item: Gift) {setGift(item);setScreen("details");setError("");}
-  function setExample(value: string) {setPrompt(value);setScreen("home");setError("");}
-  function goHome() {setScreen("home");setError("");}
+  function setExample(value: string) {setPrompt(value);setConversation([]);setResponse(null);setSelectedRecipient("");setScreen("home");setError("");}
+  function goHome() {setScreen("home");setPrompt("");setConversation([]);setResponse(null);setSelectedRecipient("");setError("");}
 
   return <div className="site-shell">
     <div className="desktop-ambient ambient-left"/><div className="desktop-ambient ambient-right"/>
@@ -141,7 +152,7 @@ export default function KadokuApp() {
           <textarea aria-label="Describe who you are shopping for" placeholder="My mom loves gardening, and her birthday is next week…" value={prompt} onChange={e=>setPrompt(e.target.value)} rows={3}/>
           <div className="composer-actions">
             <button aria-label={listening?"Stop listening":"Speak your request"} title="Voice input" className={`voice-button ${listening?"recording":""}`} onClick={speak}>{listening?"◼":"♬"}<span>{listening?"Listening…":"Voice"}</span></button>
-            <button className="send-button" disabled={busy||!prompt.trim()} onClick={findGifts}>{busy?"Finding…":"Find a gift"}<span>↗</span></button>
+            <button className="send-button" disabled={busy||!prompt.trim()} onClick={()=>void findGifts()}>{busy?"Finding…":"Find a gift"}<span>↗</span></button>
           </div>
         </div>
         {session?.user && recipients.length>0 && <div className="saved-recipient">
@@ -167,7 +178,11 @@ export default function KadokuApp() {
       </main>}
       {screen==="ideas" && <main className="chat-screen page-enter">
         <div className="inside-header"><button className="back-button" onClick={goHome}>←</button><span>Finding your perfect gift</span><span className="small-sparkle">✦</span></div>
-        <div className="user-bubble">{submitted}</div>
+        {conversation.slice(0,-1).map((turn,index)=><div key={index} className="previous-chat-turn">
+          <div className="user-bubble">{turn.text}</div>
+          <p className="previous-assistant-reply">✦ Kadoku · {turn.summary}</p>
+        </div>)}
+        <div className="user-bubble">{conversation[conversation.length-1]?.text}</div>
         <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"I found a few thoughtful ideas."} {(response?.recommendations.length||0)>0?"Here’s the one I’d pick.":""}</p></div></div>
         <div className="gift-scroller" aria-label="Gift recommendations">
           {(response?.recommendations||[]).map((item,index)=><article className="gift-card" key={item.id}>
@@ -178,8 +193,12 @@ export default function KadokuApp() {
           </article>)}
         </div>
         <p className="swipe-note">← Swipe to see all {response?.recommendations.length||0} ideas →</p>
-        <div className="assistant-followup"><span>✦</span><p>Not quite right? You can tell me what to change.</p></div>
-        <div className="refine-box"><input aria-label="Refine your request" placeholder="Something more personal, perhaps?" value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") void findGifts();}}/><button onClick={speak} aria-label="Voice input">♬</button><button disabled={busy} onClick={findGifts} aria-label="Find new recommendations">↑</button></div>
+        <div className="assistant-followup"><span>✦</span><p>Not quite right? Tell me what to change. I remember the details from this chat.</p></div>
+        {(response?.remaining_today ?? 0) > 0 && <div className="refine-suggestions">
+          <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
+          <button disabled={busy} onClick={()=>void findGifts("Something more personal")}>More personal</button>
+        </div>}
+        <div className="refine-box"><input aria-label="Refine your request" placeholder="Something more personal, perhaps?" value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button onClick={speak} aria-label="Voice input">♬</button><button disabled={busy} onClick={()=>void findGifts()} aria-label="Refine recommendations">↑</button></div>
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
@@ -224,7 +243,7 @@ export default function KadokuApp() {
     </div>
     {showAuth && <div className="modal-backdrop" onClick={()=>setShowAuth(false)}><div className="auth-modal" role="dialog" aria-modal="true" aria-label="Account" onClick={e=>e.stopPropagation()}>
       <div className="modal-top"><h2>{session?.user?"Your account":register?"Create an account":"Welcome back"}</h2><button onClick={()=>setShowAuth(false)} aria-label="Close">×</button></div>
-      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setShowAuth(false);goHome();}}>Sign out</button></> : <>
+      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setShowAuth(false);goHome();setRecipients([]);setOccasions([]);}}>Sign out</button></> : <>
         <p>Save recipient profiles and get more daily recommendations.</p>
         {register && <label className="form-label">Your name<input value={authName} onChange={e=>setAuthName(e.target.value)} autoComplete="name"/></label>}
         <label className="form-label">Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/></label>
