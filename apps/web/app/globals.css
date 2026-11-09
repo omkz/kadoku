@@ -111,3 +111,23 @@ h1 span,.checkout-screen h2 em,.people-screen h2 em {font-style:normal;color:var
 
 /* AI-generated catalog concept photos. Retain emoji fallbacks for the other products. */
 .product-art-image{object-fit:cover;object-position:center;display:block;}
+
+
+/* One simple international shipping form; fits Kadoku's existing mobile-width frame. */
+.shipping-form{border:1px solid var(--border);border-radius:18px;padding:18px;margin:18px 0 0;}
+.shipping-form h3{font-size:15px;margin:0 0 6px;}
+.shipping-form>.demo-note{margin-bottom:19px;}
+.shipping-form .form-label{margin-bottom:14px;}
+.shipping-form .form-label input{min-width:0;}
+.shipping-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;}
+.shipping-phone{display:flex;gap:9px;margin:7px 0 17px;}
+.shipping-phone input{min-width:0;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:13px;}
+.shipping-phone input:first-child{flex:0 0 90px;}
+.shipping-phone input:last-child{flex:1;}
+.shipping-form .sandbox-banner{margin:16px 0;}
+.shipping-form .paypal-action{width:100%;}
+.shipping-summary{border:1px solid var(--border);border-radius:15px;padding:16px;margin-top:17px;}
+.shipping-summary h3{font-size:14px;margin:0 0 12px;}
+.shipping-summary address{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.5;font-style:normal;color:var(--muted);overflow-wrap:anywhere;}
+.shipping-summary address strong{color:var(--ink);}
+@media(max-width:380px){.shipping-form{padding:14px;}.shipping-grid{grid-template-columns:1fr;}}
