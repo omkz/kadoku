@@ -468,7 +468,6 @@ export default function KadokuApp() {
         </div>
       </header>
       {screen==="home" && <main className="home-screen page-enter">
-        <div className="hero-icon"><span>🎁</span><i>✦</i></div>
         <p className="eyebrow">YOUR PERSONAL GIFT COMPANION</p>
         <h1>Make someone’s <span>day.</span></h1>
         <p className="hero-subtitle">Tell me who you’re shopping for, what they love, and your budget.</p>
