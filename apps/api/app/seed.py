@@ -1,5 +1,7 @@
 """Illustrative gifts only. Do not publish as purchasable real inventory."""
 from sqlalchemy import select
+from uuid import NAMESPACE_URL, uuid5
+from app.catalog.demo_products import EXTRA_SAMPLES
 from app.db.session import SessionLocal
 from app.models import Product
 
@@ -31,29 +33,57 @@ IMAGE_URLS = {
 
 
 def seed(db):
-    """Populate a blank demo DB, or fill missing image paths on existing rows.
+    """Idempotently add missing demo products without changing existing rows.
 
-    Existing product attributes (including user-edited prices and stock) remain
-    untouched. Custom image URLs are never overwritten.
+    An existing 12-item database grows by 88 products. Products from the
+    original catalog retain their IDs, prices, images, stock and order links.
+    Extra demo entries use stable UUID5 IDs so renaming an existing row does
+    not cause it to be reinserted on subsequent seed runs.
+
+    The five known studio images are backfilled only when a legacy product
+    has no image URL. New concepts intentionally have image_url=None; the web
+    frontend displays its branded default product illustration.
     """
-    if db.scalar(select(Product.id).limit(1)):
-        changed = False
-        for product in db.scalars(select(Product)).all():
-            image_url = IMAGE_URLS.get(product.name)
-            if image_url and not product.image_url:
-                product.image_url = image_url
-                changed = True
-        if changed:
-            db.commit()
-        return 0
-    for name, desc, category, price, interests, occasions, styles, emoji in SAMPLES:
-        db.add(Product(name=name, description=desc, category=category,
-                       price_minor=price, currency="USD", stock=10,
-                       interests=interests, occasions=occasions, styles=styles,
-                       emoji=emoji, image_url=IMAGE_URLS.get(name), demo_only=True))
-    db.commit()
-    return len(SAMPLES)
+    existing = list(db.scalars(select(Product)).all())
+    names = {p.name for p in existing}
+    ids = {p.id for p in existing}
+    added = 0
 
+    for product in existing:
+        image_url = IMAGE_URLS.get(product.name)
+        if image_url and not product.image_url:
+            product.image_url = image_url
+
+    for name, desc, category, price, interests, occasions, styles, emoji in SAMPLES:
+        if name in names:
+            continue
+        row = Product(
+            name=name, description=desc, category=category,
+            price_minor=price, currency="USD", stock=10,
+            interests=interests, occasions=occasions, styles=styles,
+            emoji=emoji, image_url=IMAGE_URLS.get(name), demo_only=True,
+        )
+        db.add(row)
+        names.add(name)
+        added += 1
+
+    for name, desc, category, price, interests, occasions, styles, emoji in EXTRA_SAMPLES:
+        stable_id = str(uuid5(NAMESPACE_URL, f"kadoku/demo-products/v1/{name}"))
+        if stable_id in ids or name in names:
+            continue
+        db.add(Product(
+            id=stable_id, name=name, description=desc, category=category,
+            price_minor=price, currency="USD", stock=10,
+            interests=interests, occasions=occasions, styles=styles,
+            emoji=emoji, image_url=None, demo_only=True,
+        ))
+        names.add(name)
+        ids.add(stable_id)
+        added += 1
+
+    # A no-op seed leaves all existing product attributes unchanged.
+    db.commit()
+    return added
 
 if __name__ == "__main__":
     with SessionLocal() as db:
