@@ -76,7 +76,7 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
                               user_id: str | None = Depends(optional_user)):
     paypal = PayPalClient()
     product = get_product(db, payload.product_id)
-    if not product or not product.active or product.stock <= 0:
+    if not product or not product.active or product.stock <= 0 or product.price_minor <= 0:
         raise HTTPException(409, "Product unavailable")
     if not product.demo_only or product.currency != "USD":
         raise HTTPException(409, "Sandbox checkout supports USD demo products only")
