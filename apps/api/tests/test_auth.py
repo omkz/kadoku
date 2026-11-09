@@ -1,32 +1,9 @@
 """FastAPI auth integration: signed JWT, issuer/audience, expiration, and ownership."""
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
-
+from datetime import datetime, timezone
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from app.core import auth as auth_module
-
-
-@pytest.fixture
-def token_factory(monkeypatch):
-    private = Ed25519PrivateKey.generate()
-    public = private.public_key()
-    monkeypatch.setattr(auth_module, "_jwks_client", lambda issuer: SimpleNamespace(
-        get_signing_key_from_jwt=lambda token: SimpleNamespace(key=public),
-    ))
-
-    def build(**overrides):
-        now = datetime.now(timezone.utc)
-        claims = {
-            "sub": "test-user-a", "iss": "http://localhost:3000",
-            "aud": "http://localhost:3000", "iat": now,
-            "exp": now + timedelta(minutes=15),
-        }
-        claims.update(overrides)
-        return jwt.encode(claims, private, algorithm="EdDSA", headers={"kid":"local-test-key"})
-    return build
 
 
 def test_me_requires_authorization(client):
