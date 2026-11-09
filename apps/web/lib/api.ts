@@ -13,6 +13,19 @@ export type Gift = {
   label: string;
   reason: string;
 };
+/** Catalog item returned by the public products endpoint (not an AI recommendation). */
+export type CatalogProduct = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price_minor: number;
+  currency: string;
+  stock: number;
+  emoji: string;
+  image_url: string | null;
+  demo_only: boolean;
+};
 export type GiftContext = {
   interests: string[];
   occasion: "birthday" | "anniversary" | "thank_you" | null;

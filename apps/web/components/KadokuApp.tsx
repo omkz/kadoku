@@ -1,6 +1,6 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from "react";
-import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion, type OrderSummary, type OrderDetail, type ShippingAddress} from "@/lib/api";
+import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion, type OrderSummary, type OrderDetail, type ShippingAddress, type CatalogProduct} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 import Image from "next/image";
 
@@ -20,6 +20,13 @@ const samplePrompts = [
 ];
 
 const DEFAULT_PRODUCT_IMAGE = "/products/default.webp";
+
+// Editorial demo picks, not a claim of actual sales or behavioral trending.
+const featuredNames = [
+  "Artisan Coffee Ritual", "Garden Lover's Box", "Cozy Evening Box",
+  "Book Lover Bundle", "Handmade Tea Box", "Mini Watercolor Studio",
+];
+
 
 // This is a demo checkout: country names are free-form, and dial codes remain
 // editable so users outside this suggestion list are not blocked.
@@ -86,6 +93,12 @@ export default function KadokuApp() {
   const [conversation, setConversation] = useState<{text:string;summary:string}[]>([]);
   const [response, setResponse] = useState<GiftResponse|null>(null);
   const [gift, setGift] = useState<Gift|null>(null);
+  const [detailsOrigin, setDetailsOrigin] = useState<"home"|"ideas">("ideas");
+  const [featured, setFeatured] = useState<CatalogProduct[]>([]);
+  const [featuredStatus, setFeaturedStatus] = useState<"loading"|"ready"|"error">("loading");
+  const featuredScroller = useRef<HTMLDivElement|null>(null);
+  const featuredScrollPosition = useRef(0);
+  const [featuredNav, setFeaturedNav] = useState({left:false,right:false});
   const [giftNote, setGiftNote] = useState("");
   const [shipping, setShipping] = useState<ShippingAddress>({...initialShipping});
   const [selectedRecipient, setSelectedRecipient] = useState("");
@@ -117,6 +130,54 @@ export default function KadokuApp() {
   const refineInput = useRef<HTMLInputElement|null>(null);
   const giftScrollPosition = useRef(0);
   const [giftNavigation, setGiftNavigation] = useState({left:false, right:false});
+
+  const loadFeatured = useCallback(async () => {
+    setFeaturedStatus("loading");
+    try {
+      const products = await api<CatalogProduct[]>("/products");
+      const available = products.filter(p => p.stock > 0);
+      const picks = featuredNames.flatMap(name => {
+        const match = available.find(p => p.name === name);
+        return match ? [match] : [];
+      });
+      for (const item of available) {
+        if (picks.length >= 6) break;
+        if (!picks.some(p => p.id === item.id)) picks.push(item);
+      }
+      setFeatured(picks);
+      setFeaturedStatus("ready");
+    } catch {
+      setFeatured([]);
+      setFeaturedStatus("error");
+    }
+  }, []);
+  useEffect(() => { void loadFeatured(); }, [loadFeatured]);
+
+  const syncFeaturedNavigation = useCallback(() => {
+    const el = featuredScroller.current;
+    if (!el) return;
+    const left = el.scrollLeft > 2;
+    const right = el.scrollLeft < el.scrollWidth - el.clientWidth - 2;
+    setFeaturedNav(p => p.left===left && p.right===right ? p : {left,right});
+  }, []);
+  useEffect(() => {
+    if (screen !== "home" || featured.length < 2 || !featuredScroller.current) return;
+    featuredScroller.current.scrollLeft = featuredScrollPosition.current;
+    syncFeaturedNavigation();
+    window.addEventListener("resize", syncFeaturedNavigation);
+    return () => window.removeEventListener("resize", syncFeaturedNavigation);
+  }, [screen,featured,syncFeaturedNavigation]);
+
+  function moveFeatured(direction: -1|1) {
+    const el = featuredScroller.current;
+    if (!el) return;
+    const cards = el.querySelectorAll<HTMLElement>(".featured-card");
+    const step = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : el.clientWidth;
+    el.scrollBy({
+      left: direction*step,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }
 
   const syncGiftNavigation = useCallback(() => {
     const scroller = giftScroller.current;
@@ -196,13 +257,14 @@ export default function KadokuApp() {
     if (!saved) return;
     sessionStorage.removeItem(checkoutStorageKey);
     try {
-      const value: {gift?: Gift; giftNote?: string; createdAt?: number} = JSON.parse(saved);
+      const value: {gift?: Gift; giftNote?: string; detailsOrigin?: "home"|"ideas"; createdAt?: number} = JSON.parse(saved);
       if (!value.gift || typeof value.gift.id !== "string" ||
           typeof value.gift.name !== "string" ||
           typeof value.gift.price_minor !== "number" ||
           typeof value.createdAt !== "number" ||
           Date.now() - value.createdAt > 15 * 60 * 1000) return;
       setGift(value.gift);
+      setDetailsOrigin(value.detailsOrigin === "home" ? "home" : "ideas");
       setGiftNote(typeof value.giftNote === "string" ? value.giftNote : "");
       setScreen("checkout");
     } catch { /* Invalid saved data is ignored. */ }
@@ -329,7 +391,7 @@ export default function KadokuApp() {
     setBusy(true);setError("");
     try {
       if (checkoutAfterLogin && gift) {
-        sessionStorage.setItem(checkoutStorageKey, JSON.stringify({gift, giftNote, createdAt:Date.now()}));
+        sessionStorage.setItem(checkoutStorageKey, JSON.stringify({gift, giftNote, detailsOrigin, createdAt:Date.now()}));
       }
       const result = await authClient.signIn.social({
         provider: "google", callbackURL: "/", errorCallbackURL: "/",
@@ -381,7 +443,21 @@ export default function KadokuApp() {
     } catch(e) {setError(e instanceof Error?e.message:"Checkout isn't available.");setBusy(false);}
   }
 
-  function choose(item: Gift) {setGift(item);setScreen("details");setError("");}
+  function choose(item: Gift, origin: "home"|"ideas" = "ideas") {
+    if (gift?.id !== item.id) setGiftNote("");
+    setGift(item);
+    setDetailsOrigin(origin);
+    setScreen("details");
+    setError("");
+  }
+  function chooseFeatured(item: CatalogProduct) {
+    choose({
+      id:item.id, name:item.name, description:item.description, category:item.category,
+      price_minor:item.price_minor, currency:item.currency, emoji:item.emoji,
+      image_url:item.image_url, demo_only:item.demo_only,
+      label:"Featured gift", reason:item.description,
+    }, "home");
+  }
   function setExample(value: string) {setPrompt(value);setConversation([]);setResponse(null);setSelectedRecipient("");setScreen("home");setError("");}
   function goHome() {setScreen("home");setPrompt("");setConversation([]);setResponse(null);setSelectedRecipient("");setError("");}
 
@@ -427,6 +503,34 @@ export default function KadokuApp() {
             </button>;
           })}
         </section>}
+        <section className="featured-section" aria-labelledby="featured-title">
+          <div className="featured-heading">
+            <div><h2 id="featured-title">Trending gifts ✦</h2>
+              <p>Handpicked inspiration from our sample catalog.</p>
+            </div>
+            {featured.length > 1 && <div className="featured-controls">
+              <button type="button" disabled={!featuredNav.left} aria-label="Previous featured gifts"
+                onClick={()=>moveFeatured(-1)}>‹</button>
+              <button type="button" disabled={!featuredNav.right} aria-label="Next featured gifts"
+                onClick={()=>moveFeatured(1)}>›</button>
+            </div>}
+          </div>
+          {featuredStatus==="loading" ? <p className="featured-message" role="status">Loading gift ideas…</p>
+            : featuredStatus==="error" ? <div className="featured-message" role="alert">
+              Gift ideas couldn't load. <button type="button" onClick={()=>void loadFeatured()}>Try again</button>
+            </div> : featured.length ? <div className="featured-scroller" ref={featuredScroller}
+              aria-label="Featured gifts" role="region" tabIndex={0}
+              onScroll={()=>{featuredScrollPosition.current=featuredScroller.current?.scrollLeft ?? 0;syncFeaturedNavigation();}}>
+              {featured.map(item=><button type="button" key={item.id} className="featured-card"
+                aria-label={`View ${item.name}, ${dollars(item.price_minor)}`}
+                onClick={()=>chooseFeatured(item)}>
+                <ProductArt name={item.name} emoji={item.emoji} imageUrl={item.image_url}
+                  className="featured-art" sizes="155px"/>
+                <span className="featured-name">{item.name}</span>
+                <span className="featured-price">{dollars(item.price_minor)} <span aria-hidden="true">↗</span></span>
+              </button>)}
+            </div> : <p className="featured-message">No gift ideas available right now.</p>}
+        </section>
         <div className="home-secondary"><span>♡</span> Real thoughtfulness. Less guesswork.</div>
       </main>}
       {screen==="ideas" && <main className="chat-screen page-enter">
@@ -477,10 +581,10 @@ export default function KadokuApp() {
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
-        <div className="inside-header"><button className="back-button" onClick={()=>setScreen("ideas")}>←</button><span>Your gift</span><span>✦</span></div>
+        <div className="inside-header"><button className="back-button" aria-label={detailsOrigin==="home"?"Back to home":"Back to recommendations"} onClick={()=>setScreen(detailsOrigin)}>←</button><span>Your gift</span><span>✦</span></div>
         <ProductArt name={gift.name} emoji={gift.emoji} imageUrl={gift.image_url} className="detail-art" sizes="(max-width: 520px) 100vw, 420px"/>
         <div className="detail-heading"><div><span className="detail-label">{gift.label}</span><h2>{gift.name}</h2></div><strong>{dollars(gift.price_minor)}</strong></div>
-        <div className="why-card"><span>✦</span><div><b>Why this gift?</b><p>{gift.reason}</p></div></div>
+        <div className="why-card"><span>✦</span><div><b>{detailsOrigin==="home"?"About this gift":"Why this gift?"}</b><p>{gift.reason}</p></div></div>
         <label className="form-label" htmlFor="gift-note">Add a personal message <small>(optional)</small></label>
         <textarea id="gift-note" className="note-input" rows={3} placeholder="Happy birthday! I hope this makes you smile…" value={giftNote} onChange={e=>setGiftNote(e.target.value)}/>
         <p className="demo-note">Gift messages are for the on-screen experience only; supplier fulfillment is not connected.</p>
