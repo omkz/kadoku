@@ -43,6 +43,16 @@ const initialShipping: ShippingAddress = {
 };
 
 
+/** A consistent, recognizable voice affordance across home and recommendations. */
+function MicrophoneIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"
+    fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="2" width="6" height="12" rx="3"/>
+    <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>
+  </svg>;
+}
+
 /** Catalog photo → branded illustration → emoji, including when an image fails to load. */
 function ProductArt({name, emoji, imageUrl, className, sizes}: {
   name: string;
@@ -459,13 +469,13 @@ export default function KadokuApp() {
       </header>
       {screen==="home" && <main className="home-screen page-enter">
         <div className="hero-icon"><span>🎁</span><i>✦</i></div>
-        <p className="eyebrow">A LITTLE THOUGHT GOES A LONG WAY</p>
+        <p className="eyebrow">YOUR PERSONAL GIFT COMPANION</p>
         <h1>Make someone’s <span>day.</span></h1>
-        <p className="hero-subtitle">Tell me about someone special. I’ll help you find a gift they’ll love.</p>
+        <p className="hero-subtitle">Tell me who you’re shopping for, what they love, and your budget.</p>
         <div className="composer">
-          <textarea aria-label="Describe who you are shopping for" placeholder="My mom loves gardening, and her birthday is next week…" value={prompt} onChange={e=>setPrompt(e.target.value)} rows={3}/>
+          <textarea aria-label="Describe who you are shopping for" placeholder="My mom loves gardening. Her birthday is next week. Budget $80…" value={prompt} onChange={e=>setPrompt(e.target.value)} rows={3}/>
           <div className="composer-actions">
-            <button aria-label={listening?"Stop listening":"Speak your request"} title="Voice input" className={`voice-button ${listening?"recording":""}`} onClick={speak}>{listening?"◼":"♬"}<span>{listening?"Listening…":"Voice"}</span></button>
+            <button aria-label={listening?"Stop listening":"Speak your request"} title="Voice input" className={`voice-button ${listening?"recording":""}`} onClick={speak}>{listening?<span className="voice-stop" aria-hidden="true"/>:<MicrophoneIcon/>}<span>{listening?"Listening…":"Voice"}</span></button>
             <button className="send-button" disabled={busy||!prompt.trim()} onClick={()=>void findGifts()}>{busy?"Finding…":"Find a gift"}<span>↗</span></button>
           </div>
         </div>
@@ -474,7 +484,7 @@ export default function KadokuApp() {
           <select id="recipient-choice" value={selectedRecipient} onChange={e=>setSelectedRecipient(e.target.value)}><option value="">New recipient / anyone</option>{recipients.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select>
         </div>}
         <section className="inspiration">
-          <h2>Not sure where to start?</h2><div className="chips">
+          <h2>Need inspiration?</h2><div className="chips">
             {samplePrompts.map(s=><button className="chip" key={s.label} onClick={()=>setExample(s.prompt)}>{s.emoji} {s.label}</button>)}
           </div>
         </section>
@@ -490,8 +500,8 @@ export default function KadokuApp() {
         </section>}
         <section className="featured-section" aria-labelledby="featured-title">
           <div className="featured-heading">
-            <div><h2 id="featured-title">Trending gifts ✦</h2>
-              <p>Handpicked inspiration from our sample catalog.</p>
+            <div><h2 id="featured-title">Featured gifts ✦</h2>
+              <p>Thoughtful ideas from our demo collection.</p>
             </div>
             {featured.length > 1 && <div className="featured-controls">
               <button type="button" disabled={!featuredNav.left} aria-label="Previous featured gifts"
@@ -562,7 +572,7 @@ export default function KadokuApp() {
           <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
           <button disabled={busy} onClick={()=>void findGifts("Something more personal")}>More personal</button>
         </div>}
-        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder={canRefine ? "Something more personal, perhaps?" : "Daily recommendation limit reached"} value={prompt} disabled={busy || !canRefine} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy || !canRefine} onClick={speak} aria-label="Voice input">♬</button><button disabled={busy || !canRefine} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
+        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder={canRefine ? "Something more personal, perhaps?" : "Daily recommendation limit reached"} value={prompt} disabled={busy || !canRefine} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy || !canRefine} onClick={speak} aria-label={listening?"Stop voice input":"Voice input"}><MicrophoneIcon/></button><button disabled={busy || !canRefine} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
