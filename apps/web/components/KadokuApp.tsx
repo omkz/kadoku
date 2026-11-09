@@ -19,7 +19,9 @@ const samplePrompts = [
   {emoji:"✨", label:"Just because", prompt:"I want to surprise my best friend who loves books and coffee. Budget $50."},
 ];
 
-/** Optional studio illustration with the original emoji as a safe fallback. */
+const DEFAULT_PRODUCT_IMAGE = "/products/default.webp";
+
+/** Catalog photo → branded illustration → emoji, including when an image fails to load. */
 function ProductArt({name, emoji, imageUrl, className, sizes}: {
   name: string;
   emoji: string;
@@ -27,17 +29,30 @@ function ProductArt({name, emoji, imageUrl, className, sizes}: {
   className: string;
   sizes: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [imageUrl]);
+  const [failedImageUrl, setFailedImageUrl] = useState<string|null>(null);
+  const [defaultFailed, setDefaultFailed] = useState(false);
+  useEffect(() => {
+    setFailedImageUrl(null);
+    setDefaultFailed(false);
+  }, [imageUrl]);
+
+  const hasProductImage = !!imageUrl && failedImageUrl !== imageUrl;
+  const src = hasProductImage ? imageUrl : DEFAULT_PRODUCT_IMAGE;
   return <div className={className}>
-    {imageUrl && !failed
+    {!defaultFailed
       ? <Image
-          src={imageUrl}
-          alt={`AI-generated concept illustration of ${name}`}
+          key={src}
+          src={src}
+          alt={hasProductImage
+            ? `AI-generated concept illustration of ${name}`
+            : `Illustrative Kadoku gift box; product photo unavailable for ${name}`}
           fill
           sizes={sizes}
           className="product-art-image"
-          onError={() => setFailed(true)}
+          onError={() => {
+            if (hasProductImage) setFailedImageUrl(imageUrl);
+            else setDefaultFailed(true);
+          }}
         />
       : <span aria-hidden="true">{emoji}</span>}
   </div>;
