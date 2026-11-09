@@ -47,6 +47,12 @@ h1 span,.checkout-screen h2 em,.people-screen h2 em {font-style:normal;color:var
 .occasion-row {background:#fff;width:100%;border:0;display:flex;gap:13px;align-items:center;padding:10px 0;text-align:left;}.occasion-row>span:nth-child(2){flex:1;}.occasion-date {width:42px;height:48px;border-radius:11px;background:var(--lavender);display:flex;flex-direction:column;justify-content:center;align-items:center;color:var(--purple);text-transform:uppercase;font-size:10px;}.occasion-date strong{font-size:18px;}.occasion-row b{font-size:13px;display:block;}.occasion-row small {font-size:11px;color:var(--muted);display:block;margin-top:3px;}
 .inside-header {display:flex;align-items:center;gap:12px;font-size:13px;font-weight:700;margin-bottom:24px;}.inside-header>span:nth-child(2){flex:1;}.back-button {background:transparent;border:0;padding:3px 8px 3px 0;font-size:22px;color:#5d5369;}.small-sparkle,.ai-sparkle {color:var(--purple);}
 .user-bubble {margin-left:44px;background:#f6f2f9;border-radius:18px 18px 6px 18px;padding:16px;font-size:13px;line-height:1.6;margin-bottom:26px;}
+.previous-chat-turn {margin-bottom:18px;opacity:.78;}
+.previous-chat-turn .user-bubble {margin-bottom:9px;}
+.previous-assistant-reply {font-size:12px;line-height:1.5;color:#655c6c;padding:0 6px 0 13px;margin:0;}
+.refine-suggestions {display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
+.refine-suggestions button {background:#f6f0fa;color:var(--purple);border:1px solid #e8dced;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:600;}
+.refine-suggestions button:disabled {opacity:.5;cursor:not-allowed;}
 .assistant-note {display:flex;gap:12px;margin-bottom:20px;}.ai-sparkle {background:#efe7f8;width:33px;height:33px;flex-shrink:0;border-radius:12px;display:grid;place-items:center;font-size:18px;}.assistant-note b {font-size:12px;}.assistant-note p {font-size:13px;line-height:1.55;margin:6px 0 0;color:#625a68;}
 .gift-scroller {display:flex;overflow-x:auto;gap:13px;margin:0 -25px 0 0;padding:2px 26px 13px 0;scroll-snap-type:x mandatory;scrollbar-width:none;}.gift-scroller::-webkit-scrollbar{display:none;}
 .gift-card {border:1px solid #eee9f0;border-radius:20px;min-width:258px;width:258px;scroll-snap-align:start;flex-shrink:0;overflow:hidden;padding:10px;box-shadow:0 6px 22px #5c3d6910;}

@@ -23,6 +23,17 @@
 - Product selection, gift note display, PayPal Sandbox order create/approve/capture if configured.
 - Versioned Alembic migration and automated API tests.
 
+## Conversational refinements (MVP)
+
+On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it cheaper"**, **"Something more personal"**, **"No plants"**, or **"Budget $50 instead"**. Each response includes a bounded `context` object containing the previously understood interests, exclusions, budget, occasion and the latest top-pick price. The Next.js client submits this context with the next message; the API validates it and applies deterministic hard filters before recommending up to three catalog products.
+
+- "Cheaper" means strictly below the last recommended top-pick price, if available; Kadoku does **not** silently convert IDR into USD.
+- "More personal" prioritizes demo products marked as personal (subject to budget and stock).
+- Explicit dollar budgets in a new turn override the earlier budget; existing exclusions are retained.
+- Chat context is **kept only in the current browser tab's React state**, not persisted to PostgreSQL. Home starts a fresh conversation. Saved recipient profiles remain separate.
+- **Every recommendation/refinement call consumes the existing daily quota**. Guests are currently limited to one call/day and need to sign in to refine further. This flow is not unlimited chat.
+- No LLM-generated product or price is accepted; recommendations always come from the catalog.
+
 ## Local setup (Linux / macOS)
 
 ### 1. PostgreSQL (native; no Docker needed)

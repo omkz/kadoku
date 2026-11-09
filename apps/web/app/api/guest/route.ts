@@ -12,7 +12,7 @@ export async function GET() {
   const cookieStore = await cookies();
   const previous = cookieStore.get("kadoku_guest")?.value || "";
   const [oldId,oldSignature] = previous.split(".");
-  let id = randomUUID();
+  let id: string = randomUUID();
   if (oldId && /^[a-f0-9-]{36}$/i.test(oldId) && oldSignature && /^[a-f0-9]{64}$/i.test(oldSignature)) {
     const expected = Buffer.from(signed(oldId,secret),"hex");
     const actual = Buffer.from(oldSignature,"hex");
