@@ -1,0 +1,5 @@
+{
+  "id":"/", "name":"Kadoku — AI Gifting Companion", "short_name":"Kadoku",
+  "start_url":"/", "display":"standalone", "background_color":"#fcfaf7", "theme_color":"#fcfaf7",
+  "icons":[{"src":"/logo.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}
