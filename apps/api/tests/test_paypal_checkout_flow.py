@@ -80,7 +80,7 @@ def test_paypal_order_payload_amount_return_and_cancel_urls():
     assert request_id == "create-local-123"
 
 
-def test_sandbox_checkout_create_capture_and_idempotent_return(client, database, monkeypatch):
+def test_sandbox_checkout_create_capture_and_idempotent_return(client, database, monkeypatch, token_factory):
     calls = []
 
     class FakePayPal:
@@ -97,10 +97,11 @@ def test_sandbox_checkout_create_capture_and_idempotent_return(client, database,
             return completed_payload("68.00")
 
     monkeypatch.setattr(checkout, "PayPalClient", FakePayPal)
+    headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()
     garden = next(item for item in product if item["name"] == "Garden Lover's Box")
 
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":garden["id"]})
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":garden["id"]}, headers=headers)
     assert created.status_code == 200, created.text
     order = created.json()
     assert order["status"] == "approval_pending"
@@ -108,11 +109,11 @@ def test_sandbox_checkout_create_capture_and_idempotent_return(client, database,
     assert calls[0][2] == garden["price_minor"]
 
     payload = {"order_id":order["order_id"], "paypal_order_id":"PAYPAL-SANDBOX-ORDER"}
-    confirmed = client.post("/api/v1/checkout/paypal/capture", json=payload)
+    confirmed = client.post("/api/v1/checkout/paypal/capture", json=payload, headers=headers)
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json() == {"status":"paid", "order_id":order["order_id"]}
 
-    repeated = client.post("/api/v1/checkout/paypal/capture", json=payload)
+    repeated = client.post("/api/v1/checkout/paypal/capture", json=payload, headers=headers)
     assert repeated.status_code == 200
     assert repeated.json()["status"] == "paid"
     assert len([call for call in calls if call[0] == "capture"]) == 1
@@ -124,7 +125,7 @@ def test_sandbox_checkout_create_capture_and_idempotent_return(client, database,
         assert saved.paypal_capture_id == "capture-123"
 
 
-def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeypatch):
+def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeypatch, token_factory):
     capture_calls = []
 
     class FakePayPal:
@@ -139,18 +140,19 @@ def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeyp
             return completed_payload("0.01")
 
     monkeypatch.setattr(checkout, "PayPalClient", FakePayPal)
+    headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()[0]
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]})
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
     assert created.status_code == 200
     local_id = created.json()["order_id"]
 
     wrong = client.post("/api/v1/checkout/paypal/capture",
-                        json={"order_id":local_id, "paypal_order_id":"FAKE-ID"})
+                        json={"order_id":local_id, "paypal_order_id":"FAKE-ID"}, headers=headers)
     assert wrong.status_code == 404
     assert capture_calls == []
 
     not_paid = client.post("/api/v1/checkout/paypal/capture",
-                           json={"order_id":local_id, "paypal_order_id":"PP-ORDER"})
+                           json={"order_id":local_id, "paypal_order_id":"PP-ORDER"}, headers=headers)
     assert not_paid.status_code == 409
     with database() as db:
         saved = db.get(Order, local_id)
@@ -158,7 +160,7 @@ def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeyp
         assert saved.paypal_capture_id is None
 
 
-def test_reject_open_redirect_or_invalid_approval_response(client, monkeypatch):
+def test_reject_open_redirect_or_invalid_approval_response(client, monkeypatch, token_factory):
     class FakePayPal:
         async def create_order(self, order_id, price):
             return {
@@ -167,12 +169,13 @@ def test_reject_open_redirect_or_invalid_approval_response(client, monkeypatch):
             }
 
     monkeypatch.setattr(checkout, "PayPalClient", FakePayPal)
+    headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()[0]
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]})
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
     assert created.status_code == 502
 
 
-def test_unavailable_or_zero_price_products_cannot_be_checked_out(client, database, monkeypatch):
+def test_unavailable_or_zero_price_products_cannot_be_checked_out(client, database, monkeypatch, token_factory):
     class FakePayPal:
         def __init__(self):
             raise AssertionError("Should reject invalid catalog product before calling PayPal")
@@ -185,10 +188,11 @@ def test_unavailable_or_zero_price_products_cannot_be_checked_out(client, databa
             raise AssertionError("Invalid product should not call provider")
 
     monkeypatch.setattr(checkout, "PayPalClient", NoNetworkPayPal)
+    headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()[0]
     with database() as db:
         db_prod = db.get(Product, product["id"])
         db_prod.price_minor = 0
         db.commit()
-    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]})
+    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
     assert response.status_code == 409
