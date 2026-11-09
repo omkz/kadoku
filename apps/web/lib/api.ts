@@ -8,6 +8,7 @@ export type Gift = {
   price_minor: number;
   currency: string;
   emoji: string;
+  image_url: string | null;
   demo_only: boolean;
   label: string;
   reason: string;

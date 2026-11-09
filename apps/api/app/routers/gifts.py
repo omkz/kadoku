@@ -53,7 +53,7 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
         recommendations=[GiftCard(
             id=p.id, name=p.name, description=p.description, category=p.category,
             price_minor=p.price_minor, currency=p.currency, emoji=p.emoji,
-            demo_only=p.demo_only, label=label, reason=reason,
+            demo_only=p.demo_only, image_url=p.image_url, label=label, reason=reason,
         ) for p, label, reason in choices],
         remaining_today=remaining, provider=provider,
         context=next_context(

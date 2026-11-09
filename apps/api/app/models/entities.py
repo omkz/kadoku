@@ -28,6 +28,7 @@ class Product(Base):
     occasions: Mapped[list] = mapped_column(JSON, default=list)
     styles: Mapped[list] = mapped_column(JSON, default=list)
     emoji: Mapped[str] = mapped_column(String(12), default="🎁")
+    image_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     demo_only: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

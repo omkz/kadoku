@@ -33,6 +33,7 @@ class GiftCard(BaseModel):
     price_minor: int
     currency: str
     emoji: str
+    image_url: str | None = None
     demo_only: bool
     label: str
     reason: str
@@ -57,6 +58,7 @@ class ProductOut(BaseModel):
     currency: str
     stock: int
     emoji: str
+    image_url: str | None = None
     demo_only: bool
 
 

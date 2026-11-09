@@ -34,6 +34,24 @@ On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it
 - **Every recommendation/refinement call consumes the existing daily quota**. Guests are currently limited to one call/day and need to sign in to refine further. This flow is not unlimited chat.
 - No LLM-generated product or price is accepted; recommendations always come from the catalog.
 
+## Demo product photos (5-product pilot)
+
+Five AI-generated **concept illustrations** are committed as compressed WebP assets (600×600 px) under `apps/web/public/products/`. They are matched to the existing demo catalog entries: Garden Lover's Box, Artisan Coffee Ritual, Handmade Tea Box, Book Lover Bundle, and Cozy Evening Box.
+
+Product `image_url` is optional: the remaining seven catalog entries retain their emoji illustrations. Recommendation and gift-detail cards render the image with Next.js `Image`; a missing/broken image falls back to the product emoji.
+
+For an **existing database**, run the new Alembic migration and rerun the seed command after checking out this branch:
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+uv run python -m app.seed
+```
+
+The seed operation only fills missing image paths on known demo products; it does **not** change existing product prices, stock, or custom image URLs. A fresh database receives all 12 products with five image paths.
+
+**Note:** These AI-generated photos are illustrative visuals, not verified supplier product photos. Real-product descriptions, pictures, inventory, sourcing, taxes, delivery, and returns must be validated before accepting live payments.
+
 ## Local setup (Linux / macOS)
 
 ### 1. PostgreSQL (native; no Docker needed)
