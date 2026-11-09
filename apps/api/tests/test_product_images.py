@@ -7,7 +7,7 @@ def test_demo_catalog_has_five_image_paths(client):
     products = client.get("/api/v1/products")
     assert products.status_code == 200
     rows = products.json()
-    assert len(rows) == 12
+    assert len(rows) == 100
     matches = {row["name"]: row["image_url"] for row in rows if row["image_url"]}
     assert matches == IMAGE_URLS
     assert all(value.startswith("/products/") and value.endswith(".webp")
