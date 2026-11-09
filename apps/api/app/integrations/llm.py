@@ -39,7 +39,7 @@ async def extract_intent_json(prompt: str, model: str, *, timeout_seconds: float
     raw = response.choices[0].message.content
     if not isinstance(raw, str) or len(raw) > 5000:
         raise ValueError("Invalid LLM output")
-    raw = re.sub(r"^``(?:json)?\s*|\s*``$", "", raw.strip(), flags=re.I)
+    raw = re.sub(r"^\x60{3}(?:json)?\s*|\s*\x60{3}$", "", raw.strip(), flags=re.I)
     parsed = json.loads(raw)
     if not isinstance(parsed, dict):
         raise ValueError("Expected one JSON object")
