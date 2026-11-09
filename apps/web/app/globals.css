@@ -81,3 +81,21 @@ h1 span,.checkout-screen h2 em,.people-screen h2 em {font-style:normal;color:var
 .return-screen{max-width:460px;margin:60px auto 0;padding:40px 25px;background:white;border-radius:22px;text-align:center;}.return-screen>div{font-size:50px;}.return-screen h1{font-size:31px;margin:20px auto;}.return-screen p{font-size:13px;color:var(--muted);line-height:1.6;}
 @media(max-width:520px){.site-shell{padding:0;display:block;}.app-frame{min-height:100svh;width:100%;border:0;border-radius:0;box-shadow:none;}.desktop-ambient{display:none;}.topbar{height:70px;padding:0 21px;}.home-screen,.chat-screen,.details-screen,.checkout-screen,.people-screen{padding:20px 21px 32px;}.hero-icon{margin-top:25px;}.gift-scroller{margin-right:-21px;padding-right:22px;}.auth-modal{border-radius:26px 26px 0 0;}}
 @media(prefers-reduced-motion:reduce){.page-enter{animation:none;}}
+
+
+/* Authenticated order history */
+.orders-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
+.order-row{width:100%;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:15px;padding:12px;text-align:left;color:var(--ink);}
+.order-row:hover{border-color:#bea9d6;background:#fcf9ff;}
+.order-row-details{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0;}
+.order-row-details strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere;}
+.order-row-details small{font-size:11px;color:var(--muted);}
+.order-row-details .order-paid{color:#277346;font-weight:700;}
+.order-row-price{font-size:12px;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:7px;}
+.order-row-price span{font-size:20px;color:var(--purple);}
+.order-facts{border:1px solid var(--border);border-radius:15px;padding:8px 15px;}
+.order-facts>div{display:flex;gap:10px;justify-content:space-between;align-items:start;border-bottom:1px solid var(--border);padding:12px 0;font-size:12px;}
+.order-facts>div:last-child{border-bottom:0;}
+.order-facts span{color:var(--muted);flex-shrink:0;}
+.order-facts strong,.order-facts code{font-size:11px;text-align:right;max-width:65%;overflow-wrap:anywhere;white-space:normal;}
+@media(max-width:400px){.bottom-nav button{padding:0 6px;}}
