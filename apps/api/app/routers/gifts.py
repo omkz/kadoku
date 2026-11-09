@@ -7,6 +7,7 @@ from app.repositories.catalog import available_products, get_product
 from app.models import Recipient
 from app.schemas.gifts import GiftCard, GiftRequest, GiftResponse, ProductOut
 from app.services.gifting import recommend, understand_request
+from app.services.conversation import refine_request, next_context
 from app.services.quota import use_recommendation
 
 router = APIRouter(prefix="/api/v1", tags=["gifting"])
@@ -20,6 +21,8 @@ def products(db: Session = Depends(get_db)):
 @router.post("/gifts/recommendations", response_model=GiftResponse)
 async def gift_recommendations(payload: GiftRequest, request: Request,
                                db: Session = Depends(get_db), user_id: str | None = Depends(optional_user)):
+    if not payload.context and len(payload.prompt.strip()) < 10:
+        raise HTTPException(422, "Describe the gift recipient in at least 10 characters")
     recipient = None
     if payload.recipient_id:
         if user_id is None:
@@ -36,19 +39,25 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
         timeout_seconds=settings.ai_timeout_seconds,
         max_output_tokens=settings.ai_max_output_tokens,
     )
+    intent, prefer_personal = refine_request(intent, payload.context, payload.prompt)
     if recipient:
         intent.interests = sorted(set(intent.interests) | set(recipient.interests))
         intent.avoid = sorted(set(intent.avoid) | set(recipient.avoids))
         if intent.budget_minor is None:
             intent.budget_minor = recipient.usual_budget_minor
-    choices = recommend(available_products(db), intent)
+    choices = recommend(available_products(db), intent, prefer_personal=prefer_personal)
     return GiftResponse(
-        summary=("Here are up to three thoughtfully selected gift ideas." if choices
-                 else "No gifts matched your request in the sample catalog. Try a higher USD budget."),
+        summary=(("I kept your earlier preferences and refined these gift ideas." if payload.context
+                  else "Here are up to three thoughtfully selected gift ideas.") if choices
+                 else "No gifts fit the current preferences and budget in the sample catalog. Try changing a constraint."),
         recommendations=[GiftCard(
             id=p.id, name=p.name, description=p.description, category=p.category,
             price_minor=p.price_minor, currency=p.currency, emoji=p.emoji,
             demo_only=p.demo_only, label=label, reason=reason,
         ) for p, label, reason in choices],
         remaining_today=remaining, provider=provider,
+        context=next_context(
+            intent, prefer_personal=prefer_personal,
+            top_pick_price_minor=choices[0][0].price_minor if choices else None,
+        ),
     )
