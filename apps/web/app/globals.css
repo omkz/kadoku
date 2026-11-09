@@ -64,6 +64,10 @@ h1 span,.checkout-screen h2 em,.people-screen h2 em {font-style:normal;color:var
 .gift-art {height:165px;border-radius:14px;display:grid;place-items:center;position:relative;overflow:hidden;}.gift-art span {font-size:75px;filter:drop-shadow(0 12px 13px #0000000e);}.art-0{background:linear-gradient(140deg,#edf1df,#f0e9dc);}.art-1{background:linear-gradient(140deg,#f4e3e8,#f9efe1);}.art-2{background:linear-gradient(140deg,#ece8f8,#ebf4ef);}
 .gift-meta {display:flex;align-items:center;justify-content:space-between;margin:15px 3px 7px;}.gift-meta>span {font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--purple);}.gift-meta .alternate{color:#867a90;}.gift-meta b {font-size:14px;}
 .gift-card h3 {font-size:17px;line-height:1.2;letter-spacing:-.3px;margin:0 3px 6px;}.gift-card p {font-size:11px;color:var(--muted);min-height:53px;line-height:1.5;margin:0 3px;}.gift-choose {border:0;background:var(--purple);color:white;border-radius:11px;width:100%;padding:12px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;margin-top:12px;}
+.gift-loading {font-size:12px;color:var(--purple);margin:4px 0 12px;}
+.gift-empty {margin-bottom:18px;}
+.refine-box input:disabled {opacity:.65;}
+.refine-box button:disabled {cursor:wait;opacity:.65;}
 .swipe-note {text-align:center;font-size:10px;color:#96909c;margin:8px 0 20px;}.assistant-followup {display:flex;gap:10px;align-items:center;font-size:12px;color:#665f70;margin-bottom:15px;}.assistant-followup>span{font-size:18px;color:var(--purple);}.assistant-followup p{margin:0;}
 .refine-box {border:1px solid var(--border);border-radius:999px;padding:7px;display:flex;align-items:center;gap:7px;}.refine-box input {flex:1;border:0;outline:0;min-width:0;padding-left:10px;font-size:12px;}.refine-box button {border:0;background:#f6f1fa;color:var(--purple);width:30px;height:30px;border-radius:50%;}.refine-box button:last-child{background:var(--purple);color:#fff;}
 .demo-note {font-size:10px;line-height:1.5;color:#928a9b;margin:14px 0 0;}
