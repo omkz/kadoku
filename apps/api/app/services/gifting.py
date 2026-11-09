@@ -1,8 +1,10 @@
 """Grounded gift recommender. The LLM extracts intent only; SQL is the price/stock source of truth."""
 from __future__ import annotations
-import json
 import re
 from dataclasses import dataclass, field
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field
+from app.integrations.llm import extract_intent_json
 from app.models import Product
 
 TAGS = {
@@ -47,40 +49,55 @@ def extract_intent_rules(prompt: str) -> Intent:
     return Intent(interests, occasion, budget, avoid, relationship)
 
 
-async def understand_request(prompt: str, ai_model: str) -> tuple[Intent, str]:
+class ExtractedIntent(BaseModel):
+    """Provider output is untrusted, even if it looks like structured JSON."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    interests: list[Literal["gardening", "coffee", "tea", "reading", "technology",
+                            "cooking", "art", "music", "wellness", "travel"]] = Field(default_factory=list, max_length=8)
+    occasion: Literal["birthday", "anniversary", "thank_you"] | None = None
+    budget_usd: int | None = Field(default=None, gt=0, le=100_000)
+    avoid: list[str] = Field(default_factory=list, max_length=8)
+    relationship: str | None = Field(default=None, max_length=80)
+
+
+def merge_intent(base: Intent, extracted: ExtractedIntent, prompt: str) -> Intent:
+    """Keep explicit budget/exclusions as hard constraints, regardless of LLM opinion."""
+    interests = list(dict.fromkeys(base.interests + extracted.interests))[:8]
+    avoids = list(dict.fromkeys(base.avoid + [
+        value.strip().lower() for value in extracted.avoid
+        if isinstance(value, str) and 0 < len(value.strip()) <= 60
+    ]))[:12]
+    explicit_usd = bool(re.search(r"\$\s*\d|\bUSD\b", prompt, flags=re.I))
+    budget = base.budget_minor
+    if budget is None and explicit_usd and extracted.budget_usd is not None:
+        budget = extracted.budget_usd * 100
+    return Intent(
+        interests=interests,
+        occasion=base.occasion or extracted.occasion,
+        budget_minor=budget,
+        avoid=avoids,
+        relationship=base.relationship or extracted.relationship,
+    )
+
+
+async def understand_request(prompt: str, ai_model: str,
+                             timeout_seconds: float = 12, max_output_tokens: int = 240) -> tuple[Intent, str]:
+    """Extract explicit shopping constraints, falling back to rules on provider failure."""
     base = extract_intent_rules(prompt)
     if not ai_model:
         return base, "rules"
     try:
-        from litellm import acompletion  # optional, installed with [ai]
-        response = await acompletion(
-            model=ai_model,
-            messages=[
-                {"role":"system", "content": (
-                    "Extract gift-shopping intent only. Return one JSON object with keys interests "
-                    "(array of tags among gardening, coffee, tea, reading, technology, cooking, art, music, wellness, travel), "
-                    "occasion (birthday, anniversary, thank_you or null), budget_usd (integer or null), "
-                    "avoid (array of words), relationship (string or null). Never guess currencies or convert money. "
-                    "Use budget_usd only if user explicitly specifies USD/$; otherwise null.")},
-                {"role":"user","content":prompt},
-            ],
-            max_tokens=180,
-            temperature=0,
-            timeout=12,
+        fields = await extract_intent_json(
+            prompt, ai_model,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
         )
-        raw = response.choices[0].message.content or "{}"
-        parsed = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip()))
-        if not isinstance(parsed, dict):
-            return base, "rules"
-        interests = parsed.get("interests") or base.interests
-        interests = [t for t in interests if isinstance(t, str) and t in TAGS][:8]
-        budget_usd = parsed.get("budget_usd")
-        budget = budget_usd * 100 if type(budget_usd) is int and 0 < budget_usd < 100000 else base.budget_minor
-        return Intent(interests, parsed.get("occasion") if parsed.get("occasion") in OCCASIONS else base.occasion,
-                      budget, [str(s).lower() for s in parsed.get("avoid",[]) if isinstance(s,str)][:8],
-                      str(parsed.get("relationship") or base.relationship or "")[:80]), "llm"
+        parsed = ExtractedIntent.model_validate(fields)
+        return merge_intent(base, parsed, prompt), "llm"
     except Exception:
-        # Production can be configured fail-closed instead; no LLM dependency required for local demo.
+        # Availability matters more than LLM success for the demo/catalog flow.
+        # No request text or credentials are written to logs on failures.
         return base, "rules-fallback"
 
 

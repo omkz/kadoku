@@ -30,7 +30,12 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
     # Only trust ASGI client address; do not accept client-supplied X-Forwarded-For headers.
     client_ip = request.client.host if request.client else "unknown"
     remaining = use_recommendation(db, user_id, client_ip, request.cookies.get("kadoku_guest"))
-    intent, provider = await understand_request(payload.prompt, get_settings().ai_model)
+    settings = get_settings()
+    intent, provider = await understand_request(
+        payload.prompt, settings.ai_model,
+        timeout_seconds=settings.ai_timeout_seconds,
+        max_output_tokens=settings.ai_max_output_tokens,
+    )
     if recipient:
         intent.interests = sorted(set(intent.interests) | set(recipient.interests))
         intent.avoid = sorted(set(intent.avoid) | set(recipient.avoids))
