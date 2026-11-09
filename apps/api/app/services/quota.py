@@ -12,6 +12,9 @@ from app.models import RecommendationUsage
 def use_recommendation(db: Session, user_id: str | None, client_ip: str,
                        guest_cookie: str | None = None) -> int:
     settings = get_settings()
+    if settings.environment == "development" and settings.dev_bypass_recommendation_quota:
+        # Testing-only bypass. Do not create or modify daily usage records.
+        return settings.member_recommendations_daily if user_id else settings.guest_recommendations_daily
     if user_id:
         subject = "member:" + user_id
         limit = settings.member_recommendations_daily
@@ -40,7 +43,9 @@ def use_recommendation(db: Session, user_id: str | None, client_ip: str,
         usage = RecommendationUsage(subject=subject, day=day, count=1)
         db.add(usage)
     elif usage.count >= limit:
-        raise HTTPException(429, detail="Daily gift recommendation limit reached. Sign in or try tomorrow.")
+        message = ("Member gift recommendation limit reached. Try tomorrow." if user_id
+                   else "Guest gift recommendation limit reached. Sign in or try tomorrow.")
+        raise HTTPException(429, detail=message)
     else:
         usage.count += 1
     try:
