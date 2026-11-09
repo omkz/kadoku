@@ -62,6 +62,16 @@ The idempotent seed adds **88 curated new demo products** to an existing 12-item
 
 **Note:** These AI-generated photos are illustrative visuals, not verified supplier product photos. Real-product descriptions, pictures, inventory, sourcing, taxes, delivery, and returns must be validated before accepting live payments.
 
+## MVP release smoke check (Sandbox only)
+
+This release check is for a **demo**, not a production store or real checkout.
+
+1. Run `uv run pytest -q` from `apps/api`, then `npm run typecheck:web` and `npm run build:web` from the repository root. CI runs these checks on PRs (with throwaway build-time values; CI does **not** connect to a real DB).
+2. Apply pending API migrations with `uv run alembic upgrade head`, run `uv run python -m app.seed`, and verify `GET /api/v1/products` returns the demo catalog.
+3. Check home → recommendation (including zero-match state) → details → sign-in → PayPal **Sandbox** → return/cancel → My Orders; also verify the saved-person loading/retry state, mobile swipe and desktop arrows in a real browser.
+4. Use real deployment secrets, HTTPS, the correct `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS` and database endpoints. `GUEST_COOKIE_SECRET` and `GUEST_QUOTA_SECRET` must match; do not copy the CI placeholder values to deployments. Keep `PAYPAL_MODE=sandbox`; live PayPal is not implemented.
+5. Before making the demo public, review privacy/terms, login security, abuse and AI-cost limits, and what is disclosed about fictional catalog items and non-fulfillment. Passing CI alone **does not** make Kadoku ready for real commerce.
+
 ## Local setup (Linux / macOS)
 
 ### 1. PostgreSQL (native; no Docker needed)
