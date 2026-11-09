@@ -46,7 +46,10 @@ def test_product_catalog(client):
 
 def test_checkout_requires_config(client, token_factory):
     product = client.get("/api/v1/products").json()[0]
-    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]},
+    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"], "shipping_address":{
+                               "full_name":"Demo User", "address_line_1":"123 Sample Road",
+                               "city":"Surakarta", "country":"Indonesia",
+                           }},
                            headers={"Authorization": f"Bearer {token_factory()}"})
     assert response.status_code == 503
 
