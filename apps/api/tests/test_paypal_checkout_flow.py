@@ -12,6 +12,18 @@ from app.routers import checkout
 from app.integrations.paypal import PayPalClient
 
 
+SHIP_TO = {
+    "full_name": "Demo Recipient",
+    "address_line_1": "123 Example Street",
+    "address_line_2": "Apt 4",
+    "city": "Surakarta",
+    "region": "Central Java",
+    "postal_code": "57111",
+    "country": "Indonesia",
+    "phone_country_code": "+62",
+    "phone_number": "81234567890",
+}
+
 def completed_payload(amount="68.00", *, currency="USD", capture_id="capture-123"):
     return {
         "status": "COMPLETED",
@@ -101,7 +113,7 @@ def test_sandbox_checkout_create_capture_and_idempotent_return(client, database,
     product = client.get("/api/v1/products").json()
     garden = next(item for item in product if item["name"] == "Garden Lover's Box")
 
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":garden["id"]}, headers=headers)
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":garden["id"], "shipping_address":SHIP_TO}, headers=headers)
     assert created.status_code == 200, created.text
     order = created.json()
     assert order["status"] == "approval_pending"
@@ -123,6 +135,7 @@ def test_sandbox_checkout_create_capture_and_idempotent_return(client, database,
         assert saved.status == "paid"
         assert saved.price_snapshot_minor == garden["price_minor"]
         assert saved.paypal_capture_id == "capture-123"
+        assert saved.shipping_address == SHIP_TO
 
 
 def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeypatch, token_factory):
@@ -142,7 +155,7 @@ def test_capture_does_not_accept_wrong_order_or_amount(client, database, monkeyp
     monkeypatch.setattr(checkout, "PayPalClient", FakePayPal)
     headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()[0]
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"], "shipping_address":SHIP_TO}, headers=headers)
     assert created.status_code == 200
     local_id = created.json()["order_id"]
 
@@ -171,7 +184,7 @@ def test_reject_open_redirect_or_invalid_approval_response(client, monkeypatch, 
     monkeypatch.setattr(checkout, "PayPalClient", FakePayPal)
     headers = {"Authorization": f"Bearer {token_factory()}"}
     product = client.get("/api/v1/products").json()[0]
-    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
+    created = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"], "shipping_address":SHIP_TO}, headers=headers)
     assert created.status_code == 502
 
 
@@ -194,5 +207,5 @@ def test_unavailable_or_zero_price_products_cannot_be_checked_out(client, databa
         db_prod = db.get(Product, product["id"])
         db_prod.price_minor = 0
         db.commit()
-    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"]}, headers=headers)
+    response = client.post("/api/v1/checkout/paypal/orders", json={"product_id":product["id"], "shipping_address":SHIP_TO}, headers=headers)
     assert response.status_code == 409

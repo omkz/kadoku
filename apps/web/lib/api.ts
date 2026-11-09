@@ -30,6 +30,18 @@ export type GiftResponse = {
   context: GiftContext | null;
   notice: string;
 };
+/** Recipient address saved per Sandbox order, never shared with the recommendation model. */
+export type ShippingAddress = {
+  full_name: string;
+  address_line_1: string;
+  address_line_2: string | null;
+  city: string;
+  region: string | null;
+  postal_code: string | null;
+  country: string;
+  phone_country_code: string | null;
+  phone_number: string | null;
+};
 export type OrderSummary = {
   id: string;
   product_id: string;
@@ -41,6 +53,7 @@ export type OrderSummary = {
   created_at: string;
 };
 export type OrderDetail = OrderSummary & {
+  shipping_address: ShippingAddress | null;
   paypal_order_id: string | null;
   paypal_capture_id: string | null;
 };

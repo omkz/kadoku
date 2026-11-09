@@ -116,6 +116,7 @@ def my_order(order_id: str, user_id: str = Depends(required_user),
         **order_summary(order, product),
         "paypal_order_id": order.paypal_order_id,
         "paypal_capture_id": order.paypal_capture_id,
+        "shipping_address": order.shipping_address,
     }
 
 @router.post("/orders/{order_id}/cancel")
@@ -154,7 +155,8 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
     if not product.demo_only or product.currency != "USD":
         raise HTTPException(409, "Sandbox checkout supports USD demo products only")
     order = Order(user_id=user_id, product_id=product.id,
-                  price_snapshot_minor=product.price_minor, currency="USD")
+                  price_snapshot_minor=product.price_minor, currency="USD",
+                  shipping_address=payload.shipping_address.model_dump(mode="json"))
     db.add(order)
     db.commit()
     db.refresh(order)

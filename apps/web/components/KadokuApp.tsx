@@ -1,6 +1,6 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from "react";
-import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion, type OrderSummary, type OrderDetail} from "@/lib/api";
+import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion, type OrderSummary, type OrderDetail, type ShippingAddress} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 import Image from "next/image";
 
@@ -20,6 +20,27 @@ const samplePrompts = [
 ];
 
 const DEFAULT_PRODUCT_IMAGE = "/products/default.webp";
+
+// This is a demo checkout: country names are free-form, and dial codes remain
+// editable so users outside this suggestion list are not blocked.
+const dialSuggestions = [
+  {country:"Indonesia", dial:"+62"}, {country:"United States", dial:"+1"},
+  {country:"United Kingdom", dial:"+44"}, {country:"Netherlands", dial:"+31"},
+  {country:"Germany", dial:"+49"}, {country:"France", dial:"+33"},
+  {country:"Italy", dial:"+39"}, {country:"Japan", dial:"+81"},
+  {country:"Singapore", dial:"+65"}, {country:"Australia", dial:"+61"},
+  {country:"India", dial:"+91"}, {country:"Malaysia", dial:"+60"},
+  {country:"Philippines", dial:"+63"}, {country:"Thailand", dial:"+66"},
+  {country:"South Korea", dial:"+82"}, {country:"China", dial:"+86"},
+  {country:"Canada", dial:"+1"}, {country:"Brazil", dial:"+55"},
+  {country:"United Arab Emirates", dial:"+971"}, {country:"Saudi Arabia", dial:"+966"},
+];
+const initialShipping: ShippingAddress = {
+  full_name:"", address_line_1:"", address_line_2:null, city:"",
+  region:null, postal_code:null, country:"Indonesia",
+  phone_country_code:"+62", phone_number:null,
+};
+
 
 /** Catalog photo → branded illustration → emoji, including when an image fails to load. */
 function ProductArt({name, emoji, imageUrl, className, sizes}: {
@@ -66,6 +87,7 @@ export default function KadokuApp() {
   const [response, setResponse] = useState<GiftResponse|null>(null);
   const [gift, setGift] = useState<Gift|null>(null);
   const [giftNote, setGiftNote] = useState("");
+  const [shipping, setShipping] = useState<ShippingAddress>({...initialShipping});
   const [selectedRecipient, setSelectedRecipient] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
@@ -340,7 +362,21 @@ export default function KadokuApp() {
     }
     setBusy(true);setError("");
     try {
-      const result = await api<{approval_url:string;order_id:string}>("/checkout/paypal/orders","POST",{product_id:gift.id});
+      const address: ShippingAddress = {
+        ...shipping,
+        full_name:shipping.full_name.trim(),
+        address_line_1:shipping.address_line_1.trim(),
+        address_line_2:shipping.address_line_2?.trim() || null,
+        city:shipping.city.trim(),
+        region:shipping.region?.trim() || null,
+        postal_code:shipping.postal_code?.trim() || null,
+        country:shipping.country.trim(),
+        phone_country_code:shipping.phone_number?.trim() ? shipping.phone_country_code?.trim() || null : null,
+        phone_number:shipping.phone_number?.trim() || null,
+      };
+      const result = await api<{approval_url:string;order_id:string}>("/checkout/paypal/orders","POST",{
+        product_id:gift.id, shipping_address:address,
+      });
       window.location.assign(result.approval_url);
     } catch(e) {setError(e instanceof Error?e.message:"Checkout isn't available.");setBusy(false);}
   }
@@ -456,9 +492,57 @@ export default function KadokuApp() {
         <p className="checkout-subtitle">Review your gift before continuing to PayPal.</p>
         <div className="order-card"><h3>Order summary</h3><div className="order-product"><span className="small-art">{gift.emoji}</span><div><b>{gift.name}</b><small>Quantity · 1</small></div><strong>{dollars(gift.price_minor)}</strong></div><div className="order-total"><span>Demo subtotal</span><strong>{dollars(gift.price_minor)}</strong></div></div>
         {giftNote && <div className="gift-message-preview"><b>Your gift message</b><p>“{giftNote}”</p></div>}
-        <div className="sandbox-banner"><b>Sandbox checkout</b><p>Sample products have no real stock or shipping. Only use PayPal Sandbox test accounts. No real fulfillment occurs.</p></div>
-        {!session?.user && <p className="demo-note">Sign in to place your order and see it in My Orders.</p>}
-        <button className="primary-action paypal-action" disabled={busy} onClick={session?.user ? startCheckout : continueToCheckout}>{busy?"Opening PayPal…":session?.user?"Continue to PayPal Sandbox":"Sign in to checkout"} <span>→</span></button>
+        <form className="shipping-form" onSubmit={e=>{e.preventDefault();void startCheckout();}}>
+          <h3>Recipient shipping address</h3>
+          <p className="demo-note">Demo only — use a fictional address. No gift will be shipped.</p>
+          <label className="form-label" htmlFor="ship-name">Full name
+            <input id="ship-name" required minLength={2} maxLength={120} autoComplete="shipping name"
+              value={shipping.full_name} onChange={e=>setShipping(old=>({...old,full_name:e.target.value}))} placeholder="Recipient's full name"/>
+          </label>
+          <label className="form-label" htmlFor="ship-address">Address
+            <input id="ship-address" required minLength={5} maxLength={200} autoComplete="shipping address-line1"
+              value={shipping.address_line_1} onChange={e=>setShipping(old=>({...old,address_line_1:e.target.value}))} placeholder="Street and house number"/>
+          </label>
+          <label className="form-label" htmlFor="ship-address-2">Address line 2 <small>(optional)</small>
+            <input id="ship-address-2" maxLength={200} autoComplete="shipping address-line2"
+              value={shipping.address_line_2 ?? ""} onChange={e=>setShipping(old=>({...old,address_line_2:e.target.value}))} placeholder="Apartment, district, extra details"/>
+          </label>
+          <div className="shipping-grid">
+            <label className="form-label" htmlFor="ship-city">City
+              <input id="ship-city" required minLength={2} maxLength={100} autoComplete="shipping address-level2"
+                value={shipping.city} onChange={e=>setShipping(old=>({...old,city:e.target.value}))}/>
+            </label>
+            <label className="form-label" htmlFor="ship-region">State / Province <small>(optional)</small>
+              <input id="ship-region" maxLength={100} autoComplete="shipping address-level1"
+                value={shipping.region ?? ""} onChange={e=>setShipping(old=>({...old,region:e.target.value}))}/>
+            </label>
+            <label className="form-label" htmlFor="ship-postal">Postal code <small>(optional)</small>
+              <input id="ship-postal" maxLength={32} autoComplete="shipping postal-code"
+                value={shipping.postal_code ?? ""} onChange={e=>setShipping(old=>({...old,postal_code:e.target.value}))}/>
+            </label>
+            <label className="form-label" htmlFor="ship-country">Country
+              <input id="ship-country" required minLength={2} maxLength={80} list="shipping-country-suggestions" autoComplete="shipping country-name"
+                value={shipping.country} onChange={e=>{
+                  const country=e.target.value;
+                  const match=dialSuggestions.find(item=>item.country.toLowerCase()===country.trim().toLowerCase());
+                  setShipping(old=>({...old,country,...(match?{phone_country_code:match.dial}:{})}));
+                }}/>
+            </label>
+          </div>
+          <datalist id="shipping-country-suggestions">{dialSuggestions.map(item=><option key={item.country} value={item.country}/>)}</datalist>
+          <label className="form-label" htmlFor="ship-phone">Phone number <small>(optional)</small></label>
+          <div className="shipping-phone">
+            <input aria-label="International dialing code" title="Country calling code" type="tel" inputMode="tel" maxLength={5}
+              list="shipping-dial-suggestions" value={shipping.phone_country_code ?? ""} placeholder="+62"
+              onChange={e=>setShipping(old=>({...old,phone_country_code:e.target.value}))}/>
+            <input id="ship-phone" type="tel" inputMode="tel" autoComplete="shipping tel-national" maxLength={30}
+              value={shipping.phone_number ?? ""} placeholder="81234567890"
+              onChange={e=>setShipping(old=>({...old,phone_number:e.target.value}))}/>
+          </div>
+          <datalist id="shipping-dial-suggestions">{[...new Set(dialSuggestions.map(item=>item.dial))].map(dial=><option key={dial} value={dial}/>)}</datalist>
+          <div className="sandbox-banner"><b>Sandbox checkout</b><p>This address is saved only for your demo order. Use PayPal Sandbox test accounts; no real payment or fulfillment occurs.</p></div>
+          <button type="submit" className="primary-action paypal-action" disabled={busy}>{busy?"Opening PayPal…":"Continue to PayPal Sandbox"} <span>→</span></button>
+        </form>
       </main>}
       {screen==="orders" && <main className="people-screen page-enter">
         <div className="inside-header"><button className="back-button" onClick={goHome} aria-label="Back to home">←</button><span>My Orders</span><span>⌑</span></div>
@@ -501,6 +585,17 @@ export default function KadokuApp() {
               <div><span>PayPal Sandbox order</span><code>{selectedOrder.paypal_order_id ?? "Not created"}</code></div>
               {selectedOrder.paypal_capture_id && <div><span>Capture ID</span><code>{selectedOrder.paypal_capture_id}</code></div>}
             </div>
+            <div className="shipping-summary">
+              <h3>Recipient address</h3>
+              {selectedOrder.shipping_address ? <address>
+                <strong>{selectedOrder.shipping_address.full_name}</strong>
+                <span>{selectedOrder.shipping_address.address_line_1}</span>
+                {selectedOrder.shipping_address.address_line_2 && <span>{selectedOrder.shipping_address.address_line_2}</span>}
+                <span>{[selectedOrder.shipping_address.city, selectedOrder.shipping_address.region, selectedOrder.shipping_address.postal_code].filter(Boolean).join(", ")}</span>
+                <span>{selectedOrder.shipping_address.country}</span>
+                {selectedOrder.shipping_address.phone_number && <span>{selectedOrder.shipping_address.phone_country_code} {selectedOrder.shipping_address.phone_number}</span>}
+              </address> : <p className="muted">No address recorded for this earlier demo order.</p>}
+            </div>
             <div className="sandbox-banner"><b>Demo transaction</b><p>This order uses PayPal Sandbox. No real products will be shipped.</p></div>
           </> : <p className="muted">Order not found.</p>}
       </main>}
@@ -530,7 +625,7 @@ export default function KadokuApp() {
     {showAuth && <div className="modal-backdrop" onClick={()=>{setShowAuth(false);setCheckoutAfterLogin(false);}}><div className="auth-modal" role="dialog" aria-modal="true" aria-label="Account" onClick={e=>e.stopPropagation()}>
       <div className="modal-top"><h2>{session?.user?"Your account":register?"Create an account":"Welcome back"}</h2><button onClick={()=>{setShowAuth(false);setCheckoutAfterLogin(false);}} aria-label="Close">×</button></div>
       {showAuth && error && <p role="alert" className="auth-error">{error}</p>}
-      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setSelectedRecipient("");setRecipients([]);setOccasions([]);setOrders([]);setSelectedOrder(null);setCheckoutAfterLogin(false);sessionStorage.removeItem(checkoutStorageKey);setShowAuth(false);goHome();}}>Sign out</button></> : <>
+      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setSelectedRecipient("");setRecipients([]);setOccasions([]);setOrders([]);setSelectedOrder(null);setCheckoutAfterLogin(false);setShipping({...initialShipping});sessionStorage.removeItem(checkoutStorageKey);setShowAuth(false);goHome();}}>Sign out</button></> : <>
         <p>{checkoutAfterLogin ? "Sign in to continue checkout. Your chosen gift will be kept." : "Save recipients, view orders, and get more daily recommendations."}</p>
         {register && <label className="form-label">Your name<input value={authName} onChange={e=>setAuthName(e.target.value)} autoComplete="name"/></label>}
         <label className="form-label">Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/></label>
