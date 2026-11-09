@@ -87,6 +87,44 @@ export default function KadokuApp() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const recognition = useRef<{stop:()=>void}|null>(null);
+  const giftScroller = useRef<HTMLDivElement|null>(null);
+  const giftScrollPosition = useRef(0);
+  const [giftNavigation, setGiftNavigation] = useState({left:false, right:false});
+
+  const syncGiftNavigation = useCallback(() => {
+    const scroller = giftScroller.current;
+    if (!scroller) return;
+    const left = scroller.scrollLeft > 2;
+    const right = scroller.scrollLeft < scroller.scrollWidth - scroller.clientWidth - 2;
+    setGiftNavigation(previous =>
+      previous.left === left && previous.right === right ? previous : {left, right}
+    );
+  }, []);
+
+  // A new recommendation set starts at its first card; returning from gift
+  // details restores the previous position instead of jumping to the start.
+  useEffect(() => { giftScrollPosition.current = 0; }, [response?.recommendations]);
+  useEffect(() => {
+    if (screen !== "ideas" || !giftScroller.current) return;
+    const scroller = giftScroller.current;
+    scroller.scrollLeft = giftScrollPosition.current;
+    syncGiftNavigation();
+    window.addEventListener("resize", syncGiftNavigation);
+    return () => window.removeEventListener("resize", syncGiftNavigation);
+  }, [screen, response?.recommendations, syncGiftNavigation]);
+
+  function moveGiftCarousel(direction: -1|1) {
+    const scroller = giftScroller.current;
+    if (!scroller) return;
+    const cards = scroller.querySelectorAll<HTMLElement>(".gift-card");
+    const step = cards.length > 1
+      ? cards[1].offsetLeft - cards[0].offsetLeft
+      : scroller.clientWidth;
+    scroller.scrollBy({
+      left: direction * step,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }
 
   const loadPeople = useCallback(async () => {
     if (!session?.user) {setRecipients([]);setOccasions([]);return;}
@@ -346,15 +384,29 @@ export default function KadokuApp() {
         </div>)}
         <div className="user-bubble">{conversation[conversation.length-1]?.text}</div>
         <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"I found a few thoughtful ideas."} {(response?.recommendations.length||0)>0?"Here’s the one I’d pick.":""}</p></div></div>
-        <div className="gift-scroller" aria-label="Gift recommendations">
-          {(response?.recommendations||[]).map((item,index)=><article className="gift-card" key={item.id}>
-            <ProductArt name={item.name} emoji={item.emoji} imageUrl={item.image_url} className={`gift-art art-${index%3}`} sizes="(max-width: 520px) 70vw, 258px"/>
-            <div className="gift-meta"><span className={index===0?"top-pick":"alternate"}>{index===0?"✦ ":""}{item.label}</span><b>{dollars(item.price_minor)}</b></div>
-            <h3>{item.name}</h3><p>{item.reason}</p>
-            <button className="gift-choose" onClick={()=>choose(item)}>Choose this gift <span>↗</span></button>
-          </article>)}
+        <div className="gift-carousel">
+          <div ref={giftScroller} className="gift-scroller" aria-label="Gift recommendations"
+               onScroll={() => {
+                 giftScrollPosition.current = giftScroller.current?.scrollLeft ?? 0;
+                 syncGiftNavigation();
+               }}>
+            {(response?.recommendations||[]).map((item,index)=><article className="gift-card" key={item.id}>
+              <ProductArt name={item.name} emoji={item.emoji} imageUrl={item.image_url} className={`gift-art art-${index%3}`} sizes="(max-width: 520px) 70vw, 258px"/>
+              <div className="gift-meta"><span className={index===0?"top-pick":"alternate"}>{index===0?"✦ ":""}{item.label}</span><b>{dollars(item.price_minor)}</b></div>
+              <h3>{item.name}</h3><p>{item.reason}</p>
+              <button className="gift-choose" onClick={()=>choose(item)}>Choose this gift <span>↗</span></button>
+            </article>)}
+          </div>
+          {giftNavigation.left && <button type="button" className="gift-carousel-arrow gift-carousel-prev"
+            aria-label="Previous gift" onClick={()=>moveGiftCarousel(-1)}>‹</button>}
+          {giftNavigation.right && <button type="button" className="gift-carousel-arrow gift-carousel-next"
+            aria-label="Next gift" onClick={()=>moveGiftCarousel(1)}>›</button>}
         </div>
-        <p className="swipe-note">← Swipe to see all {response?.recommendations.length||0} ideas →</p>
+        {(response?.recommendations.length||0)>1 &&
+          <p className="swipe-note">
+            <span className="swipe-mobile">← Swipe to see all {response?.recommendations.length||0} ideas →</span>
+            <span className="swipe-desktop">Use the arrows or trackpad to see all {response?.recommendations.length||0} ideas</span>
+          </p>}
         <div className="assistant-followup"><span>✦</span><p>Not quite right? Tell me what to change. I remember the details from this chat.</p></div>
         {(response?.remaining_today ?? 0) > 0 && <div className="refine-suggestions">
           <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
