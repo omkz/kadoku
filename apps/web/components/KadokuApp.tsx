@@ -9,6 +9,7 @@ function statusLabel(status: string) {
   if (status === "paid") return "Paid";
   if (status === "approval_pending") return "Awaiting payment";
   if (status === "pending") return "Pending";
+  if (status === "cancelled") return "Cancelled";
   return status.replaceAll("_", " ");
 }
 const samplePrompts = [
