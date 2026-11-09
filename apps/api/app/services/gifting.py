@@ -101,48 +101,155 @@ async def understand_request(prompt: str, ai_model: str,
         return base, "rules-fallback"
 
 
+# Map catalog categories to interests without guessing product properties.
+CATEGORY_INTERESTS = {
+    "books": "reading",
+    "tech": "technology",
+    "food": "cooking",
+    "creative": "art",
+}
+EXCLUSION_ALIASES = {
+    "plant": {"plant", "plants", "planter", "planters", "seed", "seeds", "botanical"},
+    "plants": {"plant", "plants", "planter", "planters", "seed", "seeds", "botanical"},
+}
+
+
+def eligible_products(products: list[Product], intent: Intent) -> list[Product]:
+    """Enforce catalog/price/stock/exclusion constraints before any AI ranking."""
+    output: list[Product] = []
+    forbidden: set[str] = set()
+    for term in intent.avoid:
+        term = term.lower().strip()
+        if term:
+            forbidden.update(EXCLUSION_ALIASES.get(term, {term}))
+    for product in products:
+        # Kadoku's current storefront is USD-only. Never compare currencies
+        # as though their minor units were interchangeable.
+        if not product.active or product.stock <= 0 or product.currency != "USD" or product.price_minor < 0:
+            continue
+        if intent.budget_minor is not None and product.price_minor > intent.budget_minor:
+            continue
+        searchable = " ".join([
+            product.name, product.description, product.category,
+            *(product.interests or []), *(product.styles or []),
+        ]).lower()
+        if any(re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", searchable)
+               for term in forbidden):
+            continue
+        output.append(product)
+    return output
+
+
+def grounded_reason(product: Product, intent: Intent, prefer_personal: bool) -> str:
+    """Compose explanations exclusively from catalog and stated intent."""
+    interest_matches = sorted(set(intent.interests) & set(product.interests or []))
+    relation = (intent.relationship or "").strip().lower()
+    if relation not in {"mom", "mother", "ibu", "dad", "father", "ayah",
+                        "friend", "teman", "wife", "istri", "husband", "suami",
+                        "partner"}:
+        relation = ""
+    audience = f"your {relation}" if relation else "the recipient"
+    parts: list[str] = []
+    if interest_matches:
+        parts.append(f"Matches {audience}'s interest in {', '.join(interest_matches)}.")
+    else:
+        parts.append(f"A catalog gift option for {audience}.")
+    if intent.occasion and intent.occasion in (product.occasions or []):
+        parts.append(f"Tagged for {intent.occasion.replace('_', ' ')} gifts.")
+    if prefer_personal and "personal" in (product.styles or []):
+        parts.append("Marked as a personalized option in the catalog.")
+    details = product.description.strip().rstrip(".")
+    if details:
+        parts.append(f"Includes: {details[:180]}.")
+    if intent.budget_minor is not None:
+        parts.append(f"Within your stated budget of {intent.budget_minor / 100:,.2f} USD.")
+    return " ".join(parts)
+
+
 def recommend(products: list[Product], intent: Intent, count: int = 3,
-              prefer_personal: bool = False) -> list[tuple[Product,str,str]]:
-    """Hard constraints first, then grounded scoring plus category diversity."""
-    eligible = []
-    for p in products:
-        if p.stock <= 0 or not p.active:
-            continue
-        if intent.budget_minor is not None and p.price_minor > intent.budget_minor:
-            continue
-        searchable = (p.name + " " + p.description + " " + " ".join(p.interests + p.styles)).lower()
-        if any(re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", searchable) for t in intent.avoid):
-            continue
-        interest_matches = set(intent.interests) & set(p.interests)
-        interest_score = len(interest_matches) * 8 + (4 if p.category in interest_matches else 0)
-        occasion_score = 3 if intent.occasion and intent.occasion in p.occasions else 0
+              prefer_personal: bool = False) -> list[tuple[Product, str, str]]:
+    """Rank eligible products deterministically, diversifying categories."""
+    count = max(0, min(count, 12))
+    if not count:
+        return []
+    eligible: list[tuple[Product, int, str]] = []
+    for p in eligible_products(products, intent):
+        interest_matches = set(intent.interests) & set(p.interests or [])
+        normalized_category = CATEGORY_INTERESTS.get(p.category, p.category)
+        interest_score = len(interest_matches) * 8 + (4 if normalized_category in interest_matches else 0)
+        occasion_score = 3 if intent.occasion and intent.occasion in (p.occasions or []) else 0
         price_score = 2 if intent.budget_minor and p.price_minor <= int(intent.budget_minor * .85) else 0
-        specificity = 1 if "personal" in p.styles else 0
-        personal_score = 16 if prefer_personal and 'personal' in p.styles else 0
+        specificity = 1 if "personal" in (p.styles or []) else 0
+        personal_score = 16 if prefer_personal and specificity else 0
         score = interest_score + occasion_score + price_score + specificity + personal_score
-        matched = ", ".join(sorted(interest_matches))
-        reason = f"Matches their interest in {matched}." if matched else "A versatile gift worth considering for the occasion."
-        if intent.budget_minor is not None:
-            reason += " Fits your stated budget."
-        if personal_score:
-            reason += " Adds a personal touch."
-        eligible.append((p, score, reason))
+        eligible.append((p, score, grounded_reason(p, intent, prefer_personal)))
     eligible.sort(key=lambda row: (-row[1], row[0].price_minor, row[0].id))
-    results: list[tuple[Product,str,str]] = []
+    rows: list[tuple[Product, str]] = []
     categories: set[str] = set()
     for p, _, reason in eligible:
         if p.category in categories:
             continue
-        label = ["Top pick", "Something different", "Another option"][len(results)]
-        results.append((p, label, reason))
+        rows.append((p, reason))
         categories.add(p.category)
-        if len(results) == count:
-            return results
-    for p, _, reason in eligible:
-        if any(x[0].id == p.id for x in results):
-            continue
-        label = ["Top pick", "Something different", "Another option"][len(results)]
-        results.append((p, label, reason))
-        if len(results) == count:
+        if len(rows) >= count:
             break
-    return results
+    if len(rows) < count:
+        for p, _, reason in eligible:
+            if any(chosen.id == p.id for chosen, _ in rows):
+                continue
+            rows.append((p, reason))
+            if len(rows) >= count:
+                break
+    labels = ("Top pick", "Something different", "Another option")
+    return [(p, labels[min(index, 2)], reason) for index, (p, reason) in enumerate(rows)]
+
+
+async def choose_gifts(products: list[Product], intent: Intent, *,
+                       prefer_personal: bool, model: str, ai_rerank_enabled: bool,
+                       timeout_seconds: float = 12) -> tuple[list[tuple[Product, str, str]], str]:
+    """Optional AI ordering of eligible catalog candidates, with safe fallback.
+
+    Costs one additional model request when enabled. The model only returns
+    opaque IDs, never prices, product text, or user-visible rationale.
+    """
+    fallback = recommend(products, intent, prefer_personal=prefer_personal)
+    if not ai_rerank_enabled or not model or len(fallback) < 2:
+        return fallback, "rules"
+
+    candidates = recommend(products, intent, count=12, prefer_personal=prefer_personal)
+    by_id = {p.id: (p, reason) for p, _, reason in candidates}
+    wanted = min(3, len(candidates))
+    try:
+        from app.integrations.llm import rank_catalog_json
+        answer = await rank_catalog_json(
+            model=model,
+            intent={
+                "interests": intent.interests[:10],
+                "occasion": intent.occasion,
+                "relationship": intent.relationship,
+                "budget_minor": intent.budget_minor,
+                "prefer_personal": prefer_personal,
+            },
+            candidates=[{
+                "id": p.id,
+                "name": p.name[:160],
+                "description": p.description[:200],
+                "category": p.category,
+                "price_minor": p.price_minor,
+                "interests": (p.interests or [])[:10],
+                "styles": (p.styles or [])[:10],
+                "occasions": (p.occasions or [])[:10],
+            } for p, _, _ in candidates],
+            timeout_seconds=timeout_seconds,
+        )
+        ids = answer.get("ranked_ids")
+        if (not isinstance(ids, list) or len(ids) != wanted
+                or not all(type(item) is str and item in by_id for item in ids)
+                or len(ids) != len(set(ids))):
+            raise ValueError("AI ranking contains unknown, repeated, or missing product IDs")
+        labels = ("Top pick", "Something different", "Another option")
+        return [(by_id[product_id][0], labels[index], by_id[product_id][1])
+                for index, product_id in enumerate(ids)], "llm"
+    except Exception:
+        # Never leak model output or customer preferences through exceptions.
+        return fallback, "rules-fallback"

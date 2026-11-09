@@ -42,6 +42,7 @@ class GiftResponse(BaseModel):
     recommendations: list[GiftCard]
     remaining_today: int
     provider: str
+    selection_provider: str = "rules"
     context: GiftContext | None = None
     notice: str = "Sample catalog; items are not available for real-world fulfillment."
 
