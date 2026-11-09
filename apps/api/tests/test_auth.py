@@ -1,5 +1,5 @@
 """FastAPI auth integration: signed JWT, issuer/audience, expiration, and ownership."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
