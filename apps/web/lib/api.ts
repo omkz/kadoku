@@ -12,11 +12,21 @@ export type Gift = {
   label: string;
   reason: string;
 };
+export type GiftContext = {
+  interests: string[];
+  occasion: "birthday" | "anniversary" | "thank_you" | null;
+  budget_minor: number | null;
+  avoid: string[];
+  relationship: string | null;
+  prefer_personal: boolean;
+  top_pick_price_minor: number | null;
+};
 export type GiftResponse = {
   summary: string;
   recommendations: Gift[];
   remaining_today: number;
   provider: string;
+  context: GiftContext | null;
   notice: string;
 };
 export type Recipient = {
