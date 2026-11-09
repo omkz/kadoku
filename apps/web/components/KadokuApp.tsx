@@ -25,6 +25,7 @@ export default function KadokuApp() {
   const [personInterests, setPersonInterests] = useState("");
   const [birthday, setBirthday] = useState("");
   const [showAuth, setShowAuth] = useState(false);
+  const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
   const [register, setRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,6 +43,22 @@ export default function KadokuApp() {
     } catch { /* Auth token may not be initialized yet. */ }
   }, [session?.user]);
   useEffect(() => { void loadPeople(); }, [loadPeople]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("error");
+    if (oauthError) {
+      const messages: Record<string, string> = {
+        access_denied: "Google sign-in was cancelled.",
+        email_not_verified: "Your Google email must be verified before signing in.",
+        unable_to_link_account: "This Google account could not be linked. Try your existing sign-in method.",
+      };
+      setError(messages[oauthError] || "Google sign-in was unsuccessful. Please try again.");
+      setShowAuth(true);
+      params.delete("error");
+      const query = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+    }
+  }, []);
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") void navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
@@ -106,6 +123,19 @@ export default function KadokuApp() {
       setShowAuth(false);setPassword("");
     } catch(e) {setError(e instanceof Error?e.message:"Authentication failed");}
     finally {setBusy(false);}
+  }
+
+  async function signInWithGoogle() {
+    setBusy(true);setError("");
+    try {
+      const result = await authClient.signIn.social({
+        provider: "google", callbackURL: "/", errorCallbackURL: "/",
+      });
+      if (result.error) throw new Error(result.error.message || "Google sign-in failed");
+      // Better Auth redirects the browser to Google on success.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Google sign-in failed");
+    } finally {setBusy(false);}
   }
 
   async function startCheckout() {
@@ -219,18 +249,19 @@ export default function KadokuApp() {
           })}
         </>}
       </main>}
-      {error && <div className="error-banner" role="alert">{error}<button onClick={()=>setError("")}>×</button></div>}
+      {!showAuth && error && <div className="error-banner" role="alert">{error}<button onClick={()=>setError("")}>×</button></div>}
       <nav className="bottom-nav" aria-label="Main navigation"><button className={screen==="home"?"active":""} onClick={goHome}><span>⌂</span>Home</button><button className={screen==="people"?"active":""} onClick={()=>{setScreen("people");setError("");}}><span>♡</span>My people</button><button onClick={()=>setShowAuth(true)}><span>☻</span>{session?.user?"Account":"Sign in"}</button></nav>
     </div>
     {showAuth && <div className="modal-backdrop" onClick={()=>setShowAuth(false)}><div className="auth-modal" role="dialog" aria-modal="true" aria-label="Account" onClick={e=>e.stopPropagation()}>
       <div className="modal-top"><h2>{session?.user?"Your account":register?"Create an account":"Welcome back"}</h2><button onClick={()=>setShowAuth(false)} aria-label="Close">×</button></div>
-      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setShowAuth(false);goHome();}}>Sign out</button></> : <>
+      {showAuth && error && <p role="alert" className="auth-error">{error}</p>}
+      {session?.user ? <><p>Signed in as {session.user.email}</p><button className="primary-action" onClick={async()=>{await authClient.signOut();setSelectedRecipient("");setRecipients([]);setOccasions([]);setShowAuth(false);goHome();}}>Sign out</button></> : <>
         <p>Save recipient profiles and get more daily recommendations.</p>
         {register && <label className="form-label">Your name<input value={authName} onChange={e=>setAuthName(e.target.value)} autoComplete="name"/></label>}
         <label className="form-label">Email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/></label>
         <label className="form-label">Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={register?"new-password":"current-password"}/></label>
         <button className="primary-action" disabled={busy||!email||password.length<8} onClick={login}>{busy?"Please wait…":register?"Create account":"Sign in"}</button>
-        {process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED==="true" && <button className="google-button" onClick={()=>void authClient.signIn.social({provider:"google"})}>Continue with Google</button>}
+        {googleEnabled && <button className="google-button" disabled={busy} onClick={signInWithGoogle}>Continue with Google</button>}
         <button className="switch-auth" onClick={()=>{setRegister(!register);setError("");}}>{register?"Already have an account? Sign in":"New here? Create an account"}</button>
       </>}
     </div></div>}
