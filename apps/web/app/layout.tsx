@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   icons: {icon: "/logo.svg"},
 };
-export const viewport: Viewport = {width:"device-width", initialScale:1, themeColor:"#FAF3E8"};
+export const viewport: Viewport = {width:"device-width", initialScale:1, themeColor:"#F4E6CC"};
 
 export default function RootLayout({children}: Readonly<{children:React.ReactNode}>) {
   return <html lang="en"><body>{children}</body></html>;
