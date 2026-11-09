@@ -73,6 +73,7 @@ class Order(Base):
     price_snapshot_minor: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     status: Mapped[str] = mapped_column(String(24), default="pending")
+    shipping_address: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     paypal_order_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     paypal_capture_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
