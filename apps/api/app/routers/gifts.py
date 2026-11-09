@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.repositories.catalog import available_products, get_product
 from app.models import Recipient
 from app.schemas.gifts import GiftCard, GiftRequest, GiftResponse, ProductOut
-from app.services.gifting import recommend, understand_request
+from app.services.gifting import choose_gifts, understand_request
 from app.services.conversation import refine_request, next_context
 from app.services.quota import use_recommendation
 
@@ -45,7 +45,13 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
         intent.avoid = sorted(set(intent.avoid) | set(recipient.avoids))
         if intent.budget_minor is None:
             intent.budget_minor = recipient.usual_budget_minor
-    choices = recommend(available_products(db), intent, prefer_personal=prefer_personal)
+    choices, selection_provider = await choose_gifts(
+        available_products(db), intent,
+        prefer_personal=prefer_personal,
+        model=settings.ai_model,
+        ai_rerank_enabled=settings.ai_rerank_enabled,
+        timeout_seconds=settings.ai_rerank_timeout_seconds,
+    )
     return GiftResponse(
         summary=(("I kept your earlier preferences and refined these gift ideas." if payload.context
                   else "Here are up to three thoughtfully selected gift ideas.") if choices
@@ -56,6 +62,7 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
             demo_only=p.demo_only, label=label, reason=reason,
         ) for p, label, reason in choices],
         remaining_today=remaining, provider=provider,
+        selection_provider=selection_provider,
         context=next_context(
             intent, prefer_personal=prefer_personal,
             top_pick_price_minor=choices[0][0].price_minor if choices else None,
