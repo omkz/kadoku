@@ -58,6 +58,31 @@ uv run --extra test pytest -q tests/test_ranking_quality.py
 
 The tests use synthetic catalog fixtures and fake LLM responses, **not** real supplier stock or a paid model. Personalized ranking and semantic exclusion coverage remain limited to known catalog attributes/terms; do not interpret these explanations as guaranteed recipient satisfaction.
 
+## Testing without recommendation quotas
+
+The storefront normally allows **one guest recommendation** and **five member recommendations** per UTC day. Each refinement consumes another recommendation. Changing the limits in `apps/api/.env` requires **restarting FastAPI**; `--reload` does not reliably restart after changing an env file. The frontend may also be using another API if `apps/web/.env` specifies `API_PROXY_TARGET`.
+
+For repeated AI evaluation **only on your local development instance**, set:
+
+```dotenv
+ENVIRONMENT=development
+DEV_BYPASS_RECOMMENDATION_QUOTA=true
+```
+
+Stop and restart your API process from `apps/api`:
+
+```sh
+uv run --extra ai --env-file .env uvicorn app.main:app --reload --port 8000
+```
+
+The bypass does not consume or reset usage records and has **no effect outside `ENVIRONMENT=development`**. Keep it `false` in staging/production, along with proper WAF and abuse limits. Verify the actual settings with:
+
+```sh
+uv run --env-file .env python -c "from app.core.config import get_settings; s=get_settings(); print(s.environment, s.dev_bypass_recommendation_quota, s.guest_recommendations_daily, s.member_recommendations_daily)"
+```
+
+If the API still responds with HTTP 429 after enabling the bypass, inspect the running API process/port and the Next.js `API_PROXY_TARGET`: the frontend is likely talking to a different process, or an old server instance is still running.
+
 ## Local setup (Linux / macOS)
 
 ### 1. PostgreSQL (native; no Docker needed)
