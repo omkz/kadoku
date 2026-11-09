@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Annotated, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 BoundedTag = Annotated[str, Field(min_length=1, max_length=60)]
@@ -111,7 +111,7 @@ class ShippingAddress(BaseModel):
             return value
         text = value.strip()
         if not text:
-            return None if value == "" else value  # required fields fail their length checks
+            raise ValueError("Address fields cannot be blank")
         return text
 
     @field_validator("phone_number")
@@ -129,6 +129,17 @@ class ShippingAddress(BaseModel):
     @classmethod
     def normalize_phone_code(cls, value):
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_phone_pair(self):
+        if self.phone_number and not self.phone_country_code:
+            raise ValueError("Phone country code is required when a phone number is provided")
+        if self.phone_number and self.phone_country_code:
+            digits = "".join(char for char in self.phone_number if char.isdigit())
+            if len(self.phone_country_code) - 1 + len(digits) > 15:
+                raise ValueError("International phone number cannot exceed 15 digits")
+        return self
+
 
 class CheckoutStart(BaseModel):
     product_id: str
