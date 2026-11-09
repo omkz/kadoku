@@ -1,9 +1,16 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from "react";
-import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion} from "@/lib/api";
+import {api, dollars, type Gift, type GiftResponse, type Recipient, type Occasion, type OrderSummary, type OrderDetail} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 
-type Screen = "home" | "ideas" | "details" | "checkout" | "people";
+type Screen = "home" | "ideas" | "details" | "checkout" | "people" | "orders" | "order-detail";
+const checkoutStorageKey = "kadoku_pending_checkout";
+function statusLabel(status: string) {
+  if (status === "paid") return "Paid";
+  if (status === "approval_pending") return "Awaiting payment";
+  if (status === "pending") return "Pending";
+  return status.replaceAll("_", " ");
+}
 const samplePrompts = [
   {emoji:"🎂", label:"Birthday", prompt:"I need a birthday gift for my mom. She loves gardening and tea. Budget $100."},
   {emoji:"💜", label:"Anniversary", prompt:"I'm looking for an anniversary gift for my partner. They love art and cozy evenings. Budget $80."},
@@ -21,6 +28,11 @@ export default function KadokuApp() {
   const [selectedRecipient, setSelectedRecipient] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<OrderDetail|null>(null);
+  const [ordersBusy, setOrdersBusy] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [checkoutAfterLogin, setCheckoutAfterLogin] = useState(false);
   const [newPerson, setNewPerson] = useState("");
   const [personInterests, setPersonInterests] = useState("");
   const [birthday, setBirthday] = useState("");
@@ -43,9 +55,64 @@ export default function KadokuApp() {
     } catch { /* Auth token may not be initialized yet. */ }
   }, [session?.user]);
   useEffect(() => { void loadPeople(); }, [loadPeople]);
+
+  const loadOrders = useCallback(async () => {
+    setOrdersBusy(true);
+    setOrdersError("");
+    try {
+      setOrders(await api<OrderSummary[]>("/orders"));
+    } catch (e) {
+      setOrders([]);
+      setOrdersError(e instanceof Error ? e.message : "Could not load orders.");
+    } finally {
+      setOrdersBusy(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (screen === "orders" && session?.user?.id) void loadOrders();
+  }, [screen, session?.user?.id, loadOrders]);
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    // Recover the selected gift after a full-page Google OAuth redirect.
+    // Short-lived tab storage holds no credentials or payment data.
+    const saved = sessionStorage.getItem(checkoutStorageKey);
+    if (!saved) return;
+    sessionStorage.removeItem(checkoutStorageKey);
+    try {
+      const value: {gift?: Gift; giftNote?: string; createdAt?: number} = JSON.parse(saved);
+      if (!value.gift || typeof value.gift.id !== "string" ||
+          typeof value.gift.name !== "string" ||
+          typeof value.gift.price_minor !== "number" ||
+          typeof value.createdAt !== "number" ||
+          Date.now() - value.createdAt > 15 * 60 * 1000) return;
+      setGift(value.gift);
+      setGiftNote(typeof value.giftNote === "string" ? value.giftNote : "");
+      setScreen("checkout");
+    } catch { /* Invalid saved data is ignored. */ }
+  }, [session?.user?.id]);
+
+  async function openOrder(orderId: string) {
+    setScreen("order-detail");
+    setSelectedOrder(null);
+    setOrdersError("");
+    setOrdersBusy(true);
+    try {
+      setSelectedOrder(await api<OrderDetail>(`/orders/${orderId}`));
+    } catch (e) {
+      setOrdersError(e instanceof Error ? e.message : "Could not load order.");
+    } finally {
+      setOrdersBusy(false);
+    }
+  }
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const oauthError = params.get("error");
+    if (params.get("view") === "orders") {
+      setScreen("orders");
+      params.delete("view");
+      window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash);
+    }
     if (oauthError) {
       const messages: Record<string, string> = {
         access_denied: "Google sign-in was cancelled.",
@@ -132,6 +199,10 @@ export default function KadokuApp() {
         : await authClient.signIn.email({email,password});
       if (result.error) throw new Error(result.error.message || "Authentication failed");
       setShowAuth(false);setPassword("");
+      if (checkoutAfterLogin && gift) {
+        setCheckoutAfterLogin(false);
+        setScreen("checkout");
+      }
     } catch(e) {setError(e instanceof Error?e.message:"Authentication failed");}
     finally {setBusy(false);}
   }
@@ -139,18 +210,38 @@ export default function KadokuApp() {
   async function signInWithGoogle() {
     setBusy(true);setError("");
     try {
+      if (checkoutAfterLogin && gift) {
+        sessionStorage.setItem(checkoutStorageKey, JSON.stringify({gift, giftNote, createdAt:Date.now()}));
+      }
       const result = await authClient.signIn.social({
         provider: "google", callbackURL: "/", errorCallbackURL: "/",
       });
       if (result.error) throw new Error(result.error.message || "Google sign-in failed");
       // Better Auth redirects the browser to Google on success.
     } catch (e) {
+      sessionStorage.removeItem(checkoutStorageKey);
       setError(e instanceof Error ? e.message : "Google sign-in failed");
     } finally {setBusy(false);}
   }
 
+  function continueToCheckout() {
+    if (!gift) return;
+    if (!session?.user) {
+      setCheckoutAfterLogin(true);
+      setError("");
+      setShowAuth(true);
+      return;
+    }
+    setScreen("checkout");
+  }
+
   async function startCheckout() {
     if (!gift) return;
+    if (!session?.user) {
+      setCheckoutAfterLogin(true);
+      setShowAuth(true);
+      return;
+    }
     setBusy(true);setError("");
     try {
       const result = await api<{approval_url:string;order_id:string}>("/checkout/paypal/orders","POST",{product_id:gift.id});
@@ -239,7 +330,7 @@ export default function KadokuApp() {
         <label className="form-label" htmlFor="gift-note">Add a personal message <small>(optional)</small></label>
         <textarea id="gift-note" className="note-input" rows={3} placeholder="Happy birthday! I hope this makes you smile…" value={giftNote} onChange={e=>setGiftNote(e.target.value)}/>
         <p className="demo-note">Gift messages are for the on-screen experience only; supplier fulfillment is not connected.</p>
-        <button className="primary-action" onClick={()=>setScreen("checkout")}>Continue to checkout <span>→</span></button>
+        <button className="primary-action" onClick={continueToCheckout}>Continue to checkout <span>→</span></button>
       </main>}
       {screen==="checkout" && gift && <main className="checkout-screen page-enter">
         <div className="inside-header"><button className="back-button" onClick={()=>setScreen("details")}>←</button><span>Checkout</span><span>⌑</span></div>
@@ -248,7 +339,8 @@ export default function KadokuApp() {
         <div className="order-card"><h3>Order summary</h3><div className="order-product"><span className="small-art">{gift.emoji}</span><div><b>{gift.name}</b><small>Quantity · 1</small></div><strong>{dollars(gift.price_minor)}</strong></div><div className="order-total"><span>Demo subtotal</span><strong>{dollars(gift.price_minor)}</strong></div></div>
         {giftNote && <div className="gift-message-preview"><b>Your gift message</b><p>“{giftNote}”</p></div>}
         <div className="sandbox-banner"><b>Sandbox checkout</b><p>Sample products have no real stock or shipping. Only use PayPal Sandbox test accounts. No real fulfillment occurs.</p></div>
-        <button className="primary-action paypal-action" disabled={busy} onClick={startCheckout}>{busy?"Opening PayPal…":"Continue to PayPal Sandbox"} <span>→</span></button>
+        {!session?.user && <p className="demo-note">Sign in to place your order and see it in My Orders.</p>}
+        <button className="primary-action paypal-action" disabled={busy} onClick={session?.user ? startCheckout : continueToCheckout}>{busy?"Opening PayPal…":session?.user?"Continue to PayPal Sandbox":"Sign in to checkout"} <span>→</span></button>
       </main>}
       {screen==="people" && <main className="people-screen page-enter">
         <div className="inside-header"><button className="back-button" onClick={goHome}>←</button><span>My people</span><span>♡</span></div>
