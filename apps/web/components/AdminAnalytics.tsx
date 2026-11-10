@@ -7,6 +7,7 @@ import {
   type AgBaseRegistry,
   type AgBaseWidgetDefinition,
   type AgDataSourcesDefinition,
+  type AgFieldDefinition,
   type AgDefaultWidgetDefinition,
   type AgWidgetsConfig,
   type AgReportState,
@@ -53,7 +54,29 @@ interface KadokuRegistry extends AgBaseRegistry {
   widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
 }
 
-const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v2";
+// v2 contained a catalog grid mapping that referenced nullable fields and
+// numeric columns without supported aggregations. Migrate the mapping on load.
+const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v3";
+const PREVIOUS_STORAGE_KEY = "kadoku-admin-ag-studio-layout-v2";
+
+const CATALOG_GRID_COLUMNS = [
+  {id:"catalog.product_id"},
+  {id:"catalog.product_name"},
+  {id:"catalog.category"},
+  {id:"catalog.price_usd",aggregation:"avg"},
+  {id:"catalog.stock",aggregation:"sum"},
+] as const;
+
+const CATALOG_FIELDS:AgFieldDefinition[] = [
+  {id:"product_id",name:"Product ID",format:"textFormat",notBlank:true},
+  {id:"product_name",name:"Product",format:"textFormat",notBlank:true},
+  {id:"category",name:"Category",format:"textFormat"},
+  {id:"sku",name:"SKU",format:"textFormat"},
+  {id:"price_usd",name:"Price (USD)",format:"currencyFormat"},
+  {id:"stock",name:"Available stock",format:"integerFormat"},
+  {id:"active",name:"Published",format:"booleanFormat"},
+  {id:"demo_only",name:"Demo only",format:"booleanFormat"},
+];
 
 /** Studio's documented pre-built report state. No fake values or placeholder rows. */
 const DEFAULT_REPORT:AgReportState<KadokuRegistry> = {
@@ -96,14 +119,7 @@ const DEFAULT_REPORT:AgReportState<KadokuRegistry> = {
       "catalog-stock":{
         type:"grid",
         dataMapping:{
-          cols:[
-            {id:"catalog.product_name"},
-            {id:"catalog.category"},
-            {id:"catalog.sku"},
-            {id:"catalog.price_usd"},
-            {id:"catalog.stock"},
-            {id:"catalog.active"},
-          ],
+          cols:[...CATALOG_GRID_COLUMNS],
         },
         format:{title:{enabled:true,text:"Catalog & available stock"}},
       },
@@ -150,10 +166,28 @@ export default function AdminAnalytics() {
   // admin-protected API and is not persisted in browser storage.
   useEffect(()=>{
     try {
-      const saved=window.localStorage.getItem(STORAGE_KEY);
+      const current=window.localStorage.getItem(STORAGE_KEY);
+      const legacy=!current && window.localStorage.getItem(PREVIOUS_STORAGE_KEY);
+      const saved=current || legacy;
       if(saved){
         const parsed:unknown=JSON.parse(saved);
-        if(validStoredState(parsed)) setInitialState(parsed);
+        if(validStoredState(parsed)){
+          // The old Catalog grid used optional SKU and unaggregated numeric
+          // fields; repair only that widget so other saved edits survive.
+          for(const page of parsed.pages){
+            const widgets=page.widgets as Record<string,unknown>|undefined;
+            const grid=widgets?.["catalog-stock"] as
+              {type?:string;dataMapping?:{cols?:unknown}}|undefined;
+            if(grid?.type==="grid"){
+              grid.dataMapping={...grid.dataMapping,cols:[...CATALOG_GRID_COLUMNS]};
+            }
+          }
+          setInitialState(parsed);
+          if(legacy){
+            window.localStorage.setItem(STORAGE_KEY,JSON.stringify(parsed));
+            window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
+          }
+        }
       }
     } catch {
       // Browser storage may be disabled; the default report remains usable.
@@ -178,7 +212,7 @@ export default function AdminAnalytics() {
   const data=useMemo<AgDataSourcesDefinition<KadokuRegistry>|undefined>(()=>{
     if(!report) return undefined;
     return {sources:[
-      {id:"catalog",data:report.catalog},
+      {id:"catalog",name:"Catalog",data:report.catalog,fields:CATALOG_FIELDS},
       {id:"product_performance",data:report.product_performance},
       {id:"daily_orders",data:report.daily_orders},
       {id:"payment_statuses",data:report.payment_statuses},
@@ -197,7 +231,10 @@ export default function AdminAnalytics() {
   },[]);
 
   const restoreDefault=useCallback(()=>{
-    try {window.localStorage.removeItem(STORAGE_KEY);} catch {}
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
+    } catch {}
     setInitialState(DEFAULT_REPORT);
     setRemountKey(index=>index+1);
     setLayoutNotice("Default layout restored");
