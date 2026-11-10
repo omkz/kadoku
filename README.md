@@ -200,9 +200,9 @@ pnpm install
 pnpm dev
 ```
 
-The dashboard includes prebuilt AG Studio charts and an inventory grid. **View** mode is initially selected; **Edit layout** enables drag-and-drop reporting. Layout changes are auto-saved to the local browser and **Reset layout** restores the defaults. Source datasets are fetched on demand, not saved to browser storage. Actual payment and fulfillment records always come from PayPal **Sandbox**; displayed captured amounts are test figures, **not business revenue**. No artificial recommendation/conversion metrics are shown: measuring those requires recommendation-event instrumentation.
+The dashboard includes prebuilt AG Studio charts and an inventory grid, plus a **Kadoku Checkout Health custom widget registered inside AG Studio**. This custom widget uses server-aggregated payment/fulfillment totals and does not currently participate in AG Studio cross-filtering; the other charts and grid retain built-in interactive capabilities. **View** mode is initially selected; **Edit layout** enables drag-and-drop reporting. Layout changes are auto-saved to the local browser and **Reset layout** restores the defaults. Source datasets are fetched on demand, not saved to browser storage. Actual payment and fulfillment records always come from PayPal **Sandbox**; displayed captured amounts are test figures, **not business revenue**. No artificial recommendation/conversion metrics are shown: measuring those requires recommendation-event instrumentation.
 
-AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. **Studio Agent Framework and custom AG Studio widgets are not yet implemented in this initial integration**; they will follow after local browser validation.
+AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. **Studio Agent Framework is not yet implemented** in this integration; it requires a dedicated LLM adapter, safe server-side proxy, and browser QA. The custom Checkout Health widget is already registered in AG Studio.
 
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
