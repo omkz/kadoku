@@ -62,6 +62,53 @@ The idempotent seed adds **88 curated new demo products** to an existing 12-item
 
 **Note:** These AI-generated photos are illustrative visuals, not verified supplier product photos. Real-product descriptions, pictures, inventory, sourcing, taxes, delivery, and returns must be validated before accepting live payments.
 
+## Optional local demo scenarios: Orders, Analytics and My People
+
+Kadoku's ordinary catalog seed (`python -m app.seed`) creates **products only**.
+The separate, opt-in `app.seed_scenarios` command creates fictional records
+for exercising the Admin **Orders** and **Analytics** screens:
+
+- **38 synthetic orders** spanning 0–83 days to populate the 7/30/90-day
+  charts, with pending/approval-pending/cancelled/paid states and
+  unfulfilled/processing/shipped/delivered fulfillment states.
+- Order amounts snapshot the associated demo product price; no product stock
+  is deducted or overwritten.
+- When `--user-id` is supplied, demo orders also appear in that specific
+  test account's **My Orders**; **5 demo recipients** and **4 birthdays** are
+  added for My People/Upcoming moments. Without `--user-id`, orders are
+  anonymous and appear in Admin/Analytics but not any user's My Orders.
+- Stable, deterministic IDs make reruns safe: only missing fixtures are added,
+  and existing orders/recipients, statuses, timestamps and prices are never
+  updated. The timeline is anchored to the **first run**, so it naturally
+  becomes older over time; use a separate disposable dev DB for a fresh demo.
+- Names/addresses are deliberately fictional; there are **no real PayPal
+  order IDs or capture IDs**. The seeded `paid` records **do not represent
+  actual PayPal captures** even though Admin Analytics sums paid order value.
+  Do not present those charts as evidence of captured payments or revenue.
+
+Run **only on a disposable local development or test database**. The command
+requires an explicit confirmation flag, enforces `ENVIRONMENT=development`
+or `test`, `PAYPAL_MODE=sandbox`, and rejects a remote DB connection:
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+uv run python -m app.seed
+uv run python -m app.seed_scenarios --confirm-demo-data
+```
+
+To also populate My Orders and My People for a **dedicated test user**,
+supply their existing Better Auth user ID (JWT `sub`, not email):
+
+```bash
+uv run python -m app.seed_scenarios --confirm-demo-data --user-id "TEST_BETTER_AUTH_USER_ID"
+```
+
+Run either the anonymous or the account-scoped variant on a given dev
+database. They are **different fixture sets**, and running both duplicates
+the demo transactions in Admin Analytics. Never use a production account
+or database. No migrations or backend configuration changes are required.
+
 ## MVP release smoke check (Sandbox only)
 
 This release check is for a **demo**, not a production store or real checkout.
