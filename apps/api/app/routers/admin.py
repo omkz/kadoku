@@ -119,6 +119,7 @@ class Overview(BaseModel):
     products_active: int
     products_out_of_stock: int
     orders_total: int
+    buyers_total: int
     orders_paid: int
     sandbox_paid_minor: int
 
@@ -163,6 +164,10 @@ def overview(db: Session = Depends(get_db)):
     active = db.scalar(select(func.count()).select_from(Product).where(Product.active.is_(True))) or 0
     out_of_stock = db.scalar(select(func.count()).select_from(Product).where(Product.stock <= 0)) or 0
     orders_total = db.scalar(select(func.count()).select_from(Order)) or 0
+    buyers_total = db.scalar(
+        select(func.count(func.distinct(Order.user_id)))
+        .where(Order.user_id.is_not(None))
+    ) or 0
     paid = db.scalar(select(func.count()).select_from(Order).where(Order.status == "paid")) or 0
     sandbox_total = db.scalar(
         select(func.coalesce(func.sum(Order.price_snapshot_minor), 0))
@@ -171,7 +176,7 @@ def overview(db: Session = Depends(get_db)):
     return Overview(
         products_total=total, products_active=active,
         products_out_of_stock=out_of_stock, orders_total=orders_total,
-        orders_paid=paid, sandbox_paid_minor=sandbox_total,
+        buyers_total=buyers_total, orders_paid=paid, sandbox_paid_minor=sandbox_total,
     )
 
 
