@@ -278,7 +278,18 @@ async def turn(
         "num_retries": 0,
     }
     if tools:
-        kwargs.update(tools=tools, tool_choice=choice)
+        kwargs.update(
+            tools=tools,
+            tool_choice=choice,
+            # LiteLLM 1.106–1.108.3 incorrectly imports its MCP gateway
+            # for ordinary Chat Completions function tools, even when no MCP
+            # tools were supplied. On the SDK-only install this raises
+            # ModuleNotFoundError("mcp"), wrapped as APIConnectionError 500.
+            # Kadoku forbids provider-hosted/MCP tools above, so bypassing
+            # that handler is appropriate until LiteLLM fixes the regression.
+            # Private LiteLLM kwarg: recheck on future SDK upgrades.
+            _skip_mcp_handler=True,
+        )
     # A Pydantic settings .env file does not populate the process environment.
     # LiteLLM needs this credential passed explicitly instead of assuming
     # GEMINI_API_KEY was exported by a shell.
