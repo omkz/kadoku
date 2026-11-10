@@ -3,8 +3,12 @@
 import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
+import dynamic from "next/dynamic";
 
-type Section = "overview" | "products" | "orders" | "customers" | "settings";
+// AG Studio runs in the browser; never server-render its DOM-bound engine.
+const AdminAnalytics = dynamic(()=>import("./AdminAnalytics"), {ssr:false});
+
+type Section = "overview" | "analytics" | "products" | "orders" | "customers" | "settings";
 type Access = "checking" | "allowed" | "denied" | "signed-out" | "error";
 
 type Overview = {
@@ -86,6 +90,7 @@ const emptyForm: ProductForm = {
 };
 const sections: {id:Section;label:string;symbol:string}[] = [
   {id:"overview", label:"Overview", symbol:"◫"},
+  {id:"analytics", label:"Analytics", symbol:"▥"},
   {id:"products", label:"Products", symbol:"▦"},
   {id:"orders", label:"Orders", symbol:"▤"},
   {id:"customers", label:"Customers", symbol:"♙"},
@@ -410,6 +415,7 @@ export default function AdminDashboard() {
           <div><h2>Operational workspace · Sandbox phase</h2><p>Manage catalog content and track order processing independently from payment. Test captures are not revenue, and no real stock fulfillment, shipping integrations or live payments are enabled yet.</p></div>
         </div>
       </>}
+      {section==="analytics" && <AdminAnalytics/>}
       {section==="products" && <>
         <div className="admin-section-heading"><div><p className="admin-overline">CATALOG MANAGEMENT</p><h1>Products</h1><p>Manage catalog listings, SKUs, prices, stock and product images.</p></div>
           <button className="admin-primary" type="button" onClick={()=>openEditor()}>+ Add product</button>
