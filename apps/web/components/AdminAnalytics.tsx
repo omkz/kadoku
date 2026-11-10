@@ -1,7 +1,7 @@
 "use client";
 
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {AgStudio, type AgStudioRef} from "ag-studio-react";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import {AgStudio} from "ag-studio-react";
 import {
   type AgDataSourcesDefinition,
   type AgReportState,
@@ -121,7 +121,7 @@ function validStoredState(value:unknown):value is AgReportState {
 }
 
 export default function AdminAnalytics() {
-  const studioRef=useRef<AgStudioRef>(null);
+  const [remountKey,setRemountKey]=useState(0);
   const [days,setDays]=useState<Days>(30);
   const [refreshKey,setRefreshKey]=useState(0);
   const [report,setReport]=useState<AnalyticsPayload|null>(null);
@@ -184,7 +184,8 @@ export default function AdminAnalytics() {
 
   const restoreDefault=useCallback(()=>{
     try {window.localStorage.removeItem(STORAGE_KEY);} catch {}
-    studioRef.current?.api.setState(DEFAULT_REPORT);
+    setInitialState(DEFAULT_REPORT);
+    setRemountKey(index=>index+1);
     setLayoutNotice("Default layout restored");
   },[]);
 
@@ -248,7 +249,7 @@ export default function AdminAnalytics() {
       </div>
       {layoutNotice && <p className="admin-layout-notice" role="status">{layoutNotice}</p>}
       <div className="admin-studio-canvas" data-ag-theme-mode="light">
-        <AgStudio ref={studioRef} data={data} mode={mode}
+        <AgStudio key={remountKey} data={data} mode={mode}
           initialState={initialState} theme={KADOKU_THEME}
           onStateUpdated={onStateUpdated}/>
       </div>
