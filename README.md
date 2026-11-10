@@ -228,6 +228,8 @@ Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout
 
 Tests exercise the proxy and round-trip tool calls with a fake provider, but **live Gemini calls and browser agent interactions still require manual QA before merge**.
 
+**AG Studio history error `Invalid prior tool call`:** The chat adapter now normalises prior tool arguments supplied either as JSON text or an already-decoded object, permits empty arguments for parameterless tools, and ensures every Gemini function call has a non-empty `callId` before sending it back to Studio. These changes preserve the tool-call-to-tool-result pairing required by AG Studio. If an older thread was created before the fix and still contains a malformed call, start a **new Studio AI conversation** to test the corrected producer and parser together. Do not reset the saved dashboard layout unless you actually want to reset it.
+
 #### If Studio AI fails with LiteLLM APIConnectionError (500)
 
 **Do not enable LiteLLM's full request/response debug output** or paste provider credentials into issue reports. LiteLLM's `APIConnectionError (500)` is a generic fallback for some internal translation failures as well as genuine network problems, so a 502 from Kadoku does not establish the root cause.
