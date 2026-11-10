@@ -228,6 +228,25 @@ Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout
 
 Tests exercise the proxy and round-trip tool calls with a fake provider, but **live Gemini calls and browser agent interactions still require manual QA before merge**.
 
+#### If Studio AI fails with LiteLLM APIConnectionError (500)
+
+**Do not enable LiteLLM's full request/response debug output** or paste provider credentials into issue reports. LiteLLM's `APIConnectionError (500)` is a generic fallback for some internal translation failures as well as genuine network problems, so a 502 from Kadoku does not establish the root cause.
+
+With the Gemini key already configured in `apps/api/.env`, run:
+
+```bash
+cd apps/api
+uv run --extra ai python -m app.studio_diagnostics
+```
+
+This makes **two small real provider requests** with no customer or transaction data, reports the LiteLLM version, model, success/failure, HTTP status and exception **class names only** (never raw provider exception text or API keys). It intentionally costs a small amount of provider quota. Interpret the results:
+
+- **Plain text FAIL:** start with Gemini API connectivity, model access, credentials, quota and LiteLLM version.
+- **Plain text OK; Minimal tool calling FAIL:** isolate Gemini function calling or LiteLLM's function schema transformation.
+- **Both OK:** provider access is viable; investigate the much larger AG Studio tool definitions/history. Capturing a stripped-down diagnostic of tool schema size/field types is safer than logging full prompts or tool data.
+
+The authenticated Studio Agent endpoint also logs just exception class chain, upstream status code and tool/message counts. Share those diagnostic lines, not exception messages, full HTTP payloads or secrets.
+
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
 
