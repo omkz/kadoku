@@ -109,6 +109,9 @@ async def run() -> int:
             "messages": [{"role": "user", "content": "Use report_status to report OK."}],
             "tools": [tool],
             "tool_choice": "auto",
+            # See LiteLLM issue #50781: non-MCP function tools accidentally
+            # trigger the MCP gateway import in SDK-only 1.108.3.
+            "_skip_mcp_handler": True,
         },
         acompletion,
     )
