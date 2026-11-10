@@ -204,7 +204,7 @@ The dashboard includes prebuilt AG Studio charts and an inventory grid. **View**
 
 AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. **Studio Agent Framework and custom AG Studio widgets are not yet implemented in this initial integration**; they will follow after local browser validation.
 
-`apps/web/pnpm-lock.yaml` needs to be refreshed with `pnpm install` in a networked development environment if using frozen-lockfile CI. The project's existing GitHub CI installs via npm workspaces and validates the package + Next.js typecheck/build.
+`apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
 
 ### Give an account admin access
