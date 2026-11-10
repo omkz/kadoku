@@ -99,6 +99,7 @@ def test_proxy_forwards_tool_schemas_and_model_returns_calls(client, token_facto
     assert seen[0]["api_key"]=="nonsecret-test-api-key"
     assert seen[0]["tools"][0]["function"]["name"]=="add_widget"
     assert seen[0]["tool_choice"]=="auto"
+    assert seen[0]["_skip_mcp_handler"] is True  # LiteLLM 1.108.3 MCP import regression
     assert "Sandbox" in seen[0]["messages"][0]["content"]
     assert "Chart by category"==seen[0]["messages"][1]["content"]
     assert not any("GEMINI_API_KEY" in str(x) for x in seen[0].values())
@@ -209,3 +210,19 @@ def test_safe_provider_error_statuses_and_never_expose_key():
         assert mapped==response_status
         assert fragment in detail
         assert secret not in detail
+
+
+def test_studio_text_only_turn_does_not_use_mcp_workaround(
+    client, token_factory, monkeypatch,
+):
+    ready(monkeypatch)
+    observed=[]
+    async def model(**kwargs):
+        observed.append(kwargs)
+        return fake_response(text="Sandbox analytics")
+    monkeypatch.setattr(agent,"_provider_completion",model)
+    body=payload(tools=[],toolChoice="none")
+    response=client.post(ENDPOINT+"/turn",json=body,headers=headers(token_factory))
+    assert response.status_code==200, response.text
+    assert observed and "_skip_mcp_handler" not in observed[0]
+    assert "tools" not in observed[0]
