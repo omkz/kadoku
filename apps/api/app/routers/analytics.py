@@ -7,7 +7,7 @@ browser analytics engine or an LLM.
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -89,10 +89,12 @@ class AnalyticsResponse(BaseModel):
 
 @router.get("/analytics", response_model=AnalyticsResponse)
 def analytics(
-    days: Literal[7, 30, 90] = 30,
+    days: int = Query(default=30, ge=7, le=90),
     db: Session = Depends(get_db),
 ):
     """Summaries suitable for client-side exploration, never raw orders or PII."""
+    if days not in (7, 30, 90):
+        raise HTTPException(422, "Window must be 7, 30 or 90 days")
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=days)
     within = (Order.created_at >= cutoff,)
