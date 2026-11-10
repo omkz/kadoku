@@ -166,6 +166,31 @@ This implementation uses the Orders API `payer-action` redirect and PayPal's app
 - **Legacy guest orders** (`user_id IS NULL`) remain unassigned and are **not automatically visible** to newly signed-in users. No migration or ownership guessing is performed.
 - Product name and emoji currently come from the catalog; the order amount and currency are preserved from checkout-time snapshots. This remains a **Sandbox-only demo**, not commercial fulfillment.
 
+## Admin dashboard (MVP)
+
+The separate **`/admin`** area is a wide, desktop-friendly workspace (the shopper homepage remains mobile-first at 470px). It includes:
+
+- **Overview:** total and active products, out-of-stock items, Sandbox orders, and captured test payment amounts. Sandbox captures are **not business revenue**.
+- **Products:** server-paginated search/filter, add, edit, activate/deactivate, USD price and stock editing. A deactivated product disappears from recommendations while linked orders remain intact. All newly created products are **demo-only**. Existing catalog images are preserved; image upload is not implemented.
+- **Orders:** server-paginated, read-only order list and payment statuses, with shortened buyer references. Shipping addresses, payment identifiers and other private details are not exposed in the list.
+
+No AG Grid or TanStack Table dependency is required for this bounded MVP. React tables with API-side pagination and filtering are used; revisit a grid library only if bulk-editing or more complex workflows become necessary.
+
+### Give an account admin access
+
+1. Start the backend and web app as above. Register or sign in through the normal Kadoku storefront first.
+2. Retrieve **that existing account's Better Auth user ID**, for example from the PostgreSQL auth database:
+   ```sql
+   SELECT id, email FROM "user";
+   ```
+   Do not use the email address itself as an admin authorization rule.
+3. Set **`ADMIN_USER_IDS=<the-id>`** in `apps/api/.env` (comma-separated for multiple administrators). Restart the FastAPI service to reload the environment.
+4. Open **`http://localhost:3000/admin`** (or `https://your-domain/admin` after deployment) while signed into that account.
+
+**Security:** The FastAPI admin endpoints validate each Better Auth JWT (signed EdDSA, issuer, audience, expiration and subject) and require its `sub` to be in the server-side `ADMIN_USER_IDS` allowlist. An empty allowlist denies everybody. Visitors cannot fetch admin data merely by opening the page; protected actions must pass the API's admin authorization check. Do not copy the local example ID or secrets into production.
+
+The admin MVP deliberately **cannot** manually mark an order paid, initiate refunds, charge a buyer, override PayPal status, or delete products permanently. This remains demo infrastructure, not a commercial store. There is no migration, extra frontend package or new authorization table.
+
 ## Automated tests
 
 ```bash

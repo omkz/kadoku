@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"
     better_auth_url: str = "http://localhost:3000"
+    admin_user_ids: str = ""  # comma-separated Better Auth user IDs (JWT sub), fail closed by default
     guest_quota_secret: str = ""  # required for quota when exposed publicly
     guest_recommendations_daily: int = 1
     member_recommendations_daily: int = 5

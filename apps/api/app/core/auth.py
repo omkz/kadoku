@@ -46,3 +46,15 @@ def required_user(user_id: str | None = Depends(optional_user)) -> str:
     if not user_id:
         raise HTTPException(401, "Sign in to access your account")
     return user_id
+
+
+def required_admin(user_id: str = Depends(required_user)) -> str:
+    """Only explicitly allowlisted Better Auth account IDs can access admin APIs.
+
+    User IDs are taken from a verified, signed JWT subject. No caller-supplied
+    role or email header is trusted. Empty allowlists deny all authenticated users.
+    """
+    allowed = {item.strip() for item in get_settings().admin_user_ids.split(",") if item.strip()}
+    if user_id not in allowed:
+        raise HTTPException(403, "Administrator access required")
+    return user_id
