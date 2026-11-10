@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from app.core.auth import required_admin
 from app.core.config import get_settings
+from app.studio_diagnostics import _exception_types
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin/analytics/agent", tags=["admin-ai"])
@@ -86,6 +87,12 @@ def _safe_provider_error(exc: Exception, model: str) -> tuple[int, str]:
         return 502, f"{provider} rejected this AI tool request. Check model tool-calling support."
     if code == 408 or "timeout" in kind:
         return 504, f"{provider} request timed out. Retry later."
+    if code == 500 and "apiconnectionerror" in kind:
+        return 502, (
+            f"{provider}/LiteLLM returned an unclassified error (500). "
+            "Run 'uv run --extra ai python -m app.studio_diagnostics' in apps/api "
+            "to test basic model access and function calling separately."
+        )
     if code in (500, 502, 503, 504) or "connectionerror" in kind:
         return 502, f"{provider} service or network unavailable. Retry later."
     return 502, f"{provider} request failed. Check backend logs for the exception type."
@@ -288,8 +295,10 @@ async def turn(
     except Exception as exc:
         code = getattr(exc, "status_code", None)
         logger.warning(
-            "Studio AI provider request failed: type=%s status=%s",
-            type(exc).__name__, code if isinstance(code, int) else "unknown",
+            "Studio AI request failed: exception_types=%s status=%s tool_count=%d message_count=%d",
+            _exception_types(exc),
+            code if isinstance(code, int) else "unknown",
+            len(tools), len(messages),
         )
         http_code, message = _safe_provider_error(exc, _configured_model())
         raise HTTPException(http_code, message) from None
