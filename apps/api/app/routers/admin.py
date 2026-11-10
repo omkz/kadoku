@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import required_admin
@@ -119,6 +119,7 @@ class Overview(BaseModel):
     products_active: int
     products_out_of_stock: int
     orders_total: int
+    buyers_total: int
     orders_paid: int
     sandbox_paid_minor: int
 
@@ -141,12 +142,32 @@ class OrderPage(BaseModel):
     page_size: int
 
 
+class AdminCustomerOut(BaseModel):
+    """Only buyers with orders; deliberately excludes account emails and addresses."""
+    buyer_ref: str
+    orders_total: int
+    paid_orders: int
+    sandbox_paid_minor: int
+    latest_order_at: datetime
+
+
+class CustomerPage(BaseModel):
+    items: list[AdminCustomerOut]
+    total: int
+    page: int
+    page_size: int
+
+
 @router.get("/overview", response_model=Overview)
 def overview(db: Session = Depends(get_db)):
     total = db.scalar(select(func.count()).select_from(Product)) or 0
     active = db.scalar(select(func.count()).select_from(Product).where(Product.active.is_(True))) or 0
     out_of_stock = db.scalar(select(func.count()).select_from(Product).where(Product.stock <= 0)) or 0
     orders_total = db.scalar(select(func.count()).select_from(Order)) or 0
+    buyers_total = db.scalar(
+        select(func.count(func.distinct(Order.user_id)))
+        .where(Order.user_id.is_not(None))
+    ) or 0
     paid = db.scalar(select(func.count()).select_from(Order).where(Order.status == "paid")) or 0
     sandbox_total = db.scalar(
         select(func.coalesce(func.sum(Order.price_snapshot_minor), 0))
@@ -155,7 +176,7 @@ def overview(db: Session = Depends(get_db)):
     return Overview(
         products_total=total, products_active=active,
         products_out_of_stock=out_of_stock, orders_total=orders_total,
-        orders_paid=paid, sandbox_paid_minor=sandbox_total,
+        buyers_total=buyers_total, orders_paid=paid, sandbox_paid_minor=sandbox_total,
     )
 
 
@@ -236,3 +257,52 @@ def orders(
         for order, name in rows
     ]
     return OrderPage(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/customers", response_model=CustomerPage)
+def customers(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Read-only, order-linked buyer summary (not all registered accounts).
+
+    Guests cannot be identified uniquely, so they are excluded. Do not return
+    authentication IDs, shipping addresses, PayPal identifiers or emails.
+    """
+    total = db.scalar(
+        select(func.count(func.distinct(Order.user_id)))
+        .where(Order.user_id.is_not(None))
+    ) or 0
+    last_order = func.max(Order.created_at)
+    rows = db.execute(
+        select(
+            Order.user_id,
+            func.count(Order.id),
+            func.sum(case((Order.status == "paid", 1), else_=0)),
+            func.coalesce(func.sum(case(
+                ((Order.status == "paid") & (Order.currency == "USD"),
+                 Order.price_snapshot_minor),
+                else_=0,
+            )), 0),
+            last_order,
+        )
+        .where(Order.user_id.is_not(None))
+        .group_by(Order.user_id)
+        .order_by(last_order.desc(), Order.user_id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return CustomerPage(
+        items=[
+            AdminCustomerOut(
+                buyer_ref="…" + user_id[-8:],
+                orders_total=orders_total,
+                paid_orders=paid_orders,
+                sandbox_paid_minor=paid_minor,
+                latest_order_at=latest,
+            )
+            for user_id, orders_total, paid_orders, paid_minor, latest in rows
+        ],
+        total=total, page=page, page_size=page_size,
+    )

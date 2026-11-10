@@ -1,10 +1,10 @@
 "use client";
 
-import {useCallback, useEffect, useState, type FormEvent} from "react";
+import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 
-type Section = "overview" | "products" | "orders";
+type Section = "overview" | "products" | "orders" | "customers" | "settings";
 type Access = "checking" | "allowed" | "denied" | "signed-out" | "error";
 
 type Overview = {
@@ -12,6 +12,7 @@ type Overview = {
   products_active: number;
   products_out_of_stock: number;
   orders_total: number;
+  buyers_total: number;
   orders_paid: number;
   sandbox_paid_minor: number;
 };
@@ -41,6 +42,13 @@ type AdminOrder = {
   buyer_ref: string;
   created_at: string;
 };
+type AdminCustomer = {
+  buyer_ref: string;
+  orders_total: number;
+  paid_orders: number;
+  sandbox_paid_minor: number;
+  latest_order_at: string;
+};
 type Page<T> = {items: T[]; total: number; page: number; page_size: number};
 type ProductForm = {
   name: string;
@@ -55,7 +63,7 @@ type ProductForm = {
   styles: string;
 };
 
-const PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 20;
 const emptyForm: ProductForm = {
   name: "", description: "", category: "", price: "", stock: "10",
   emoji: "🎁", active: true, interests: "", occasions: "", styles: "",
@@ -64,6 +72,8 @@ const sections: {id:Section;label:string;symbol:string}[] = [
   {id:"overview", label:"Overview", symbol:"◫"},
   {id:"products", label:"Products", symbol:"▦"},
   {id:"orders", label:"Orders", symbol:"▤"},
+  {id:"customers", label:"Customers", symbol:"♙"},
+  {id:"settings", label:"Settings", symbol:"⚙"},
 ];
 
 function dateLabel(value: string) {
@@ -71,6 +81,9 @@ function dateLabel(value: string) {
 }
 function orderStatus(status: string) {
   return status.replaceAll("_", " ");
+}
+function pageRange(total: number, page: number, size: number) {
+  return total === 0 ? "0" : `${(page - 1) * size + 1}–${Math.min(page * size, total)}`;
 }
 function splitTags(value: string) {
   return value.split(",").map(tag=>tag.trim()).filter(Boolean);
@@ -81,6 +94,10 @@ export default function AdminDashboard() {
   const [access, setAccess] = useState<Access>("checking");
   const [accessError, setAccessError] = useState("");
   const [section, setSection] = useState<Section>("overview");
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const productsRequest = useRef(0);
+  const ordersRequest = useRef(0);
+  const customersRequest = useRef(0);
   const [overview, setOverview] = useState<Overview|null>(null);
   const [overviewBusy, setOverviewBusy] = useState(false);
   const [overviewError, setOverviewError] = useState("");
@@ -96,6 +113,10 @@ export default function AdminDashboard() {
   const [ordersError, setOrdersError] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("");
   const [ordersPage, setOrdersPage] = useState(1);
+  const [customers, setCustomers] = useState<Page<AdminCustomer>|null>(null);
+  const [customersPage, setCustomersPage] = useState(1);
+  const [customersBusy, setCustomersBusy] = useState(false);
+  const [customersError, setCustomersError] = useState("");
   const [editing, setEditing] = useState<"new"|string|null>(null);
   const [form, setForm] = useState<ProductForm>({...emptyForm});
   const [saving, setSaving] = useState(false);
@@ -137,37 +158,58 @@ export default function AdminDashboard() {
   }, [isPending, session?.user?.id]);
 
   const loadProducts = useCallback(async () => {
+    const requestId = ++productsRequest.current;
     setProductBusy(true);
     setProductError("");
     const params = new URLSearchParams({
-      page: String(productPage), page_size: String(PAGE_SIZE),
+      page: String(productPage), page_size: String(pageSize),
     });
     if (search) params.set("search", search);
     if (activeFilter !== "all") params.set("active", activeFilter);
     try {
-      setProducts(await api<Page<AdminProduct>>("/admin/products?" + params.toString()));
+      const result = await api<Page<AdminProduct>>("/admin/products?" + params.toString());
+      if (requestId === productsRequest.current) setProducts(result);
     } catch (error) {
-      setProductError(error instanceof Error ? error.message : "Could not load products.");
+      if (requestId === productsRequest.current) setProductError(error instanceof Error ? error.message : "Could not load products.");
     } finally {
-      setProductBusy(false);
+      if (requestId === productsRequest.current) setProductBusy(false);
     }
-  }, [productPage, search, activeFilter]);
+  }, [productPage, search, activeFilter, pageSize]);
 
   const loadOrders = useCallback(async () => {
+    const requestId = ++ordersRequest.current;
     setOrdersBusy(true);
     setOrdersError("");
     const params = new URLSearchParams({
-      page: String(ordersPage), page_size: String(PAGE_SIZE),
+      page: String(ordersPage), page_size: String(pageSize),
     });
     if (orderStatusFilter) params.set("status", orderStatusFilter);
     try {
-      setOrders(await api<Page<AdminOrder>>("/admin/orders?" + params.toString()));
+      const result = await api<Page<AdminOrder>>("/admin/orders?" + params.toString());
+      if (requestId === ordersRequest.current) setOrders(result);
     } catch (error) {
-      setOrdersError(error instanceof Error ? error.message : "Could not load orders.");
+      if (requestId === ordersRequest.current) setOrdersError(error instanceof Error ? error.message : "Could not load orders.");
     } finally {
-      setOrdersBusy(false);
+      if (requestId === ordersRequest.current) setOrdersBusy(false);
     }
-  }, [ordersPage, orderStatusFilter]);
+  }, [ordersPage, orderStatusFilter, pageSize]);
+
+  const loadCustomers = useCallback(async () => {
+    const requestId = ++customersRequest.current;
+    setCustomersBusy(true);
+    setCustomersError("");
+    const params = new URLSearchParams({
+      page: String(customersPage), page_size: String(pageSize),
+    });
+    try {
+      const result = await api<Page<AdminCustomer>>("/admin/customers?" + params.toString());
+      if (requestId === customersRequest.current) setCustomers(result);
+    } catch (error) {
+      if (requestId === customersRequest.current) setCustomersError(error instanceof Error ? error.message : "Could not load customers.");
+    } finally {
+      if (requestId === customersRequest.current) setCustomersBusy(false);
+    }
+  }, [customersPage, pageSize]);
 
   useEffect(() => {
     if (access === "allowed" && section === "products") void loadProducts();
@@ -176,6 +218,25 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (access === "allowed" && section === "orders") void loadOrders();
   }, [access, section, loadOrders]);
+
+  useEffect(() => {
+    if (access === "allowed" && section === "customers") void loadCustomers();
+  }, [access, section, loadCustomers]);
+
+  function changePageSize(value: number) {
+    setPageSize(value);
+    setProductPage(1);
+    setOrdersPage(1);
+    setCustomersPage(1);
+  }
+
+  const pageSizeControl = <label className="admin-page-size">Rows per page
+    <select aria-label="Rows per page" value={pageSize} onChange={e=>changePageSize(Number(e.target.value))}>
+      <option value={10}>10</option>
+      <option value={20}>20</option>
+      <option value={50}>50</option>
+    </select>
+  </label>;
 
   function openEditor(product?: AdminProduct) {
     if (!product) {
@@ -270,8 +331,8 @@ export default function AdminDashboard() {
         {overviewError && <p className="admin-error" role="alert">{overviewError}</p>}
         {overviewBusy && <p className="admin-muted" role="status">Refreshing overview…</p>}
         {overview && <div className="admin-stat-grid">
-          <div className="admin-stat"><span>Products</span><strong>{overview.products_total}</strong><small>{overview.products_active} active</small></div>
-          <div className="admin-stat"><span>Out of stock</span><strong>{overview.products_out_of_stock}</strong><small>All products</small></div>
+          <div className="admin-stat"><span>Products</span><strong>{overview.products_total}</strong><small>{overview.products_active} active · {overview.products_out_of_stock} out of stock</small></div>
+          <div className="admin-stat"><span>Order-linked buyers</span><strong>{overview.buyers_total}</strong><small>Signed-in buyers only</small></div>
           <div className="admin-stat"><span>Sandbox orders</span><strong>{overview.orders_total}</strong><small>{overview.orders_paid} marked paid</small></div>
           <div className="admin-stat"><span>Sandbox captured amount</span><strong>{dollars(overview.sandbox_paid_minor)}</strong><small>Test payments, not revenue</small></div>
         </div>}
@@ -325,9 +386,9 @@ export default function AdminDashboard() {
             </tr>)}</tbody>
           </table></div>
           {products.items.length===0 && <p className="admin-empty">No products match your filters.</p>}
-          <div className="admin-pagination"><span>{products.total} products · Page {productPage} of {Math.max(1,Math.ceil(products.total/PAGE_SIZE))}</span><div>
+          <div className="admin-pagination"><span>Showing {pageRange(products.total,productPage,pageSize)} of {products.total} products · Page {productPage} of {Math.max(1,Math.ceil(products.total/pageSize))}</span><div>{pageSizeControl}
             <button type="button" className="admin-outline" disabled={productPage===1||productBusy} onClick={()=>setProductPage(p=>p-1)}>Previous</button>
-            <button type="button" className="admin-outline" disabled={productPage*PAGE_SIZE>=products.total||productBusy} onClick={()=>setProductPage(p=>p+1)}>Next</button>
+            <button type="button" className="admin-outline" disabled={productPage*pageSize>=products.total||productBusy} onClick={()=>setProductPage(p=>p+1)}>Next</button>
           </div></div></>}
         </div>
       </>}
@@ -356,12 +417,45 @@ export default function AdminDashboard() {
             </tr>)}</tbody>
           </table></div>
           {orders.items.length===0 && <p className="admin-empty">No orders found for this status.</p>}
-          <div className="admin-pagination"><span>{orders.total} orders · Page {ordersPage} of {Math.max(1,Math.ceil(orders.total/PAGE_SIZE))}</span><div>
+          <div className="admin-pagination"><span>Showing {pageRange(orders.total,ordersPage,pageSize)} of {orders.total} orders · Page {ordersPage} of {Math.max(1,Math.ceil(orders.total/pageSize))}</span><div>{pageSizeControl}
             <button className="admin-outline" type="button" disabled={ordersPage===1||ordersBusy} onClick={()=>setOrdersPage(p=>p-1)}>Previous</button>
-            <button className="admin-outline" type="button" disabled={ordersPage*PAGE_SIZE>=orders.total||ordersBusy} onClick={()=>setOrdersPage(p=>p+1)}>Next</button>
+            <button className="admin-outline" type="button" disabled={ordersPage*pageSize>=orders.total||ordersBusy} onClick={()=>setOrdersPage(p=>p+1)}>Next</button>
           </div></div></>}
         </div>
         <p className="admin-disclaimer">Payment status is maintained by PayPal capture and verified webhooks. Changing it manually is deliberately unsupported.</p>
+      </>}
+      {section==="customers" && <>
+        <div className="admin-section-heading"><div><p className="admin-overline">BUYER ACTIVITY</p><h1>Customers</h1><p>Signed-in buyers with order history. Registered users without orders are not included.</p></div>
+          <button type="button" className="admin-outline" onClick={()=>void loadCustomers()} disabled={customersBusy}>↻ Refresh</button>
+        </div>
+        <div className="admin-panel">
+          {customersError && <p className="admin-error" role="alert">{customersError}</p>}
+          {customersBusy && <p className="admin-loading" role="status">Loading buyer activity…</p>}
+          {customers && <><div className="admin-table-scroll"><table className="admin-table">
+            <thead><tr><th>Buyer ref</th><th>Orders</th><th>Paid</th><th>Sandbox captured</th><th>Last order</th></tr></thead>
+            <tbody>{customers.items.map(buyer=><tr key={buyer.buyer_ref}>
+              <td className="admin-mono">{buyer.buyer_ref}</td>
+              <td>{buyer.orders_total}</td><td>{buyer.paid_orders}</td>
+              <td className="admin-no-wrap">{dollars(buyer.sandbox_paid_minor)}</td>
+              <td className="admin-no-wrap">{dateLabel(buyer.latest_order_at)}</td>
+            </tr>)}</tbody>
+          </table></div>
+          {customers.items.length===0 && <p className="admin-empty">No signed-in buyers with orders yet.</p>}
+          <div className="admin-pagination"><span>Showing {pageRange(customers.total,customersPage,pageSize)} of {customers.total} buyers · Page {customersPage} of {Math.max(1,Math.ceil(customers.total/pageSize))}</span><div>{pageSizeControl}
+            <button type="button" className="admin-outline" disabled={customersPage===1||customersBusy} onClick={()=>setCustomersPage(p=>p-1)}>Previous</button>
+            <button type="button" className="admin-outline" disabled={customersPage*pageSize>=customers.total||customersBusy} onClick={()=>setCustomersPage(p=>p+1)}>Next</button>
+          </div></div></>}
+        </div>
+        <p className="admin-disclaimer">Guest checkout records cannot be reliably assigned to an individual customer. This view deliberately omits emails, addresses and PayPal identifiers.</p>
+      </>}
+      {section==="settings" && <>
+        <div className="admin-section-heading"><div><p className="admin-overline">STORE CONFIGURATION</p><h1>Settings</h1><p>Current safeguards for the demonstration store.</p></div></div>
+        <div className="admin-settings-grid">
+          <div className="admin-panel admin-settings-card"><h2>Administrator account</h2><p>{session?.user?.email}</p><small>Admin access is configured server-side using verified Better Auth user IDs in ADMIN_USER_IDS.</small></div>
+          <div className="admin-panel admin-settings-card"><h2>Payment environment</h2><p>PayPal Sandbox only</p><small>Test payments are not revenue. Payment mode, provider keys and captures cannot be edited here.</small></div>
+          <div className="admin-panel admin-settings-card"><h2>Catalog policy</h2><p>USD · demo-only products</p><small>Products can be activated or deactivated under Products. Real inventory and fulfillment are not enabled.</small></div>
+        </div>
+        <p className="admin-disclaimer">These are read-only operational notes, not editable production settings.</p>
       </>}
     </main>
   </div>;

@@ -173,6 +173,9 @@ The separate **`/admin`** area is a wide, desktop-friendly workspace (the shoppe
 - **Overview:** total and active products, out-of-stock items, Sandbox orders, and captured test payment amounts. Sandbox captures are **not business revenue**.
 - **Products:** server-paginated search/filter, add, edit, activate/deactivate, USD price and stock editing. A deactivated product disappears from recommendations while linked orders remain intact. All newly created products are **demo-only**. Existing catalog images are preserved; image upload is not implemented.
 - **Orders:** server-paginated, read-only order list and payment statuses, with shortened buyer references. Shipping addresses, payment identifiers and other private details are not exposed in the list.
+- **Customers:** paginated, read-only **order-linked signed-in buyers**. Buyer references are truncated; show counts, paid-order counts and captured Sandbox amounts. This is **not** the entire Better Auth user registry, and guests are excluded because their identities cannot be reliably linked.
+- **Settings:** read-only operator account and demo/Sandbox safeguards; secrets and payment mode remain server-managed.
+- **Pagination:** Products, Orders and Customers default to 20 rows/page with selectable 10/20/50 and Previous/Next. Filtering resets the page; the API queries only the requested slice (maximum 100).
 
 No AG Grid or TanStack Table dependency is required for this bounded MVP. React tables with API-side pagination and filtering are used; revisit a grid library only if bulk-editing or more complex workflows become necessary.
 
