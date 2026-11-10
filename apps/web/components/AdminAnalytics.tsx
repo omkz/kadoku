@@ -5,9 +5,9 @@ import {AgStudio, createWidgets} from "ag-studio-react";
 import CheckoutPulseWidget from "./CheckoutPulseWidget";
 import {
   type AgBaseRegistry,
+  type AgBaseWidgetDefinition,
   type AgDataSourcesDefinition,
   type AgDefaultWidgetDefinition,
-  type AgWidgetDefinition,
   type AgWidgetsConfig,
   type AgReportState,
   type AgStudioStateUpdatedEvent,
@@ -48,10 +48,7 @@ type AnalyticsPayload = {
   fulfillment_statuses:{fulfillment_status:string;paid_orders:number}[];
 };
 
-interface CheckoutPulseDef extends AgWidgetDefinition {
-  type:"checkout-pulse";
-  dataMapping:{};
-}
+type CheckoutPulseDef = AgBaseWidgetDefinition<"checkout-pulse", {}, {}, unknown>;
 interface KadokuRegistry extends AgBaseRegistry {
   widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
 }
