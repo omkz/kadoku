@@ -103,7 +103,16 @@ def seed_demo_scenarios(
         product = products[index % len(products)]
         status = STATUS_CYCLE[index % len(STATUS_CYCLE)]
         paid = status == "paid"
-        fulfillment = FULFILLMENT_CYCLE[index % len(FULFILLMENT_CYCLE)] if paid else "unfulfilled"
+        # Count paid entries, rather than all statuses, so every fulfillment
+        # phase (including delivered) is represented in the sample orders.
+        paid_ordinal = sum(
+            STATUS_CYCLE[slot % len(STATUS_CYCLE)] == "paid"
+            for slot in range(index + 1)
+        ) - 1
+        fulfillment = (
+            FULFILLMENT_CYCLE[paid_ordinal % len(FULFILLMENT_CYCLE)]
+            if paid else "unfulfilled"
+        )
         placed_at = now - timedelta(days=days_ago, hours=index % 18)
         shipped = fulfillment in ("shipped", "delivered")
         delivered = fulfillment == "delivered"
