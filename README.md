@@ -186,7 +186,26 @@ cd apps/api
 uv run alembic upgrade head
 ```
 
-No new frontend dependency or grid library is needed. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
+AG Studio is only used inside Analytics; regular Products/Orders tables remain unchanged. This feature adds the commercial `ag-studio` + `ag-studio-react` packages pinned to matching **3.1.0** versions. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
+
+### AG Studio Analytics (feature branch)
+
+The **Analytics** item in `/admin` embeds AG Studio into the existing Next.js admin shell, backed by **`GET /api/v1/admin/analytics?days=30`**. The API returns server-aggregated payment, fulfillment, daily activity and product-performance datasets for 7, 30 or 90 days. The same admin-only JWT allowlist protects this endpoint; no customer accounts, addresses, PayPal identifiers, shipping records or raw payments are exposed to the client analytics engine.
+
+Use the normal backend/frontend commands above, and install the new frontend dependency once after checking out this branch:
+
+```bash
+cd apps/web
+pnpm install
+pnpm dev
+```
+
+The dashboard includes prebuilt AG Studio charts and an inventory grid. **View** mode is initially selected; **Edit layout** enables drag-and-drop reporting. Layout changes are auto-saved to the local browser and **Reset layout** restores the defaults. Source datasets are fetched on demand, not saved to browser storage. Actual payment and fulfillment records always come from PayPal **Sandbox**; displayed captured amounts are test figures, **not business revenue**. No artificial recommendation/conversion metrics are shown: measuring those requires recommendation-event instrumentation.
+
+AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. **Studio Agent Framework and custom AG Studio widgets are not yet implemented in this initial integration**; they will follow after local browser validation.
+
+`apps/web/pnpm-lock.yaml` needs to be refreshed with `pnpm install` in a networked development environment if using frozen-lockfile CI. The project's existing GitHub CI installs via npm workspaces and validates the package + Next.js typecheck/build.
+
 
 ### Give an account admin access
 
@@ -201,7 +220,7 @@ No new frontend dependency or grid library is needed. Implement supplier-backed 
 
 **Security:** The FastAPI admin endpoints validate each Better Auth JWT (signed EdDSA, issuer, audience, expiration and subject) and require its `sub` to be in the server-side `ADMIN_USER_IDS` allowlist. An empty allowlist denies everybody. Visitors cannot fetch admin data merely by opening the page; protected actions must pass the API's admin authorization check. Do not copy the local example ID or secrets into production.
 
-The admin MVP deliberately **cannot** manually mark an order paid, initiate refunds, charge a buyer, override PayPal status, or delete products permanently. This remains demo infrastructure, not a commercial store. There is no migration, extra frontend package or new authorization table.
+The admin cannot manually mark an order paid, initiate refunds, charge a buyer, override PayPal status, or delete products permanently. Fulfillment and analytics remain internal Sandbox-stage tools, not a production commerce service. The analytics feature adds no DB migration or authorization table.
 
 ## Automated tests
 
