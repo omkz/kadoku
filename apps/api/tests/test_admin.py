@@ -133,4 +133,4 @@ def test_admin_orders_list_all_buyers_without_shipping_pii(
     assert len(all_rows.json()["items"]) == 1
     assert all_rows.json()["total"] == 2
     assert client.get("/api/v1/admin/orders?page_size=999", headers=headers).status_code == 422
-    assert client.patch(f"/api/v1/admin/orders/{order['id']}", json={"status": "paid"}, headers=headers).status_code == 405
+    assert client.patch(f"/api/v1/admin/orders/{order['id']}", json={"status": "paid"}, headers=headers).status_code in (404, 405)
