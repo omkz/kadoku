@@ -1,7 +1,7 @@
 """The AG Studio agent proxy is authenticated, bounded, and forwards tool calls."""
 from types import SimpleNamespace
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.routers import studio_agent as agent
 
 
@@ -40,6 +40,7 @@ def ready(monkeypatch):
     monkeypatch.setattr(settings, "admin_user_ids", "test-user-a")
     monkeypatch.setattr(settings, "studio_agent_enabled", True)
     monkeypatch.setattr(settings, "studio_agent_model", "gemini/gemini-2.5-flash")
+    monkeypatch.setattr(settings, "gemini_api_key", "nonsecret-test-api-key")
 
 
 def fake_response(*, text="Created your chart", calls=None):
@@ -57,6 +58,7 @@ def test_admin_only_and_explicit_opt_in(client, token_factory, monkeypatch):
     settings=get_settings()
     monkeypatch.setattr(settings, "studio_agent_enabled", False)
     monkeypatch.setattr(settings, "studio_agent_model", "")
+    monkeypatch.setattr(settings, "gemini_api_key", "")
     assert client.get(ENDPOINT + "/status").status_code == 401
     assert client.post(ENDPOINT + "/turn", json=payload()).status_code == 401
     assert client.get(ENDPOINT + "/status", headers=headers(token_factory)).status_code == 403
@@ -94,6 +96,7 @@ def test_proxy_forwards_tool_schemas_and_model_returns_calls(client, token_facto
     assert tool["name"]=="add_widget"
     assert tool["arguments"]=='{"category": "coffee"}'
     assert seen[0]["model"]=="gemini/gemini-2.5-flash"
+    assert seen[0]["api_key"]=="nonsecret-test-api-key"
     assert seen[0]["tools"][0]["function"]["name"]=="add_widget"
     assert seen[0]["tool_choice"]=="auto"
     assert "Sandbox" in seen[0]["messages"][0]["content"]
@@ -151,3 +154,58 @@ def test_proxy_returns_provider_errors_without_leaking_secrets(client,token_fact
     response=client.post(ENDPOINT+"/turn",json=payload(),headers=headers(token_factory))
     assert response.status_code==502
     assert "sensitive-secret" not in response.text
+
+
+def test_dotenv_key_is_loaded_into_settings(tmp_path, monkeypatch):
+    """Regression: LiteLLM cannot see keys parsed solely by BaseSettings."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    env_file=tmp_path/"studio-env"
+    env_file.write_text(
+        "STUDIO_AGENT_ENABLED=true\\n"
+        "STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash\\n"
+        "GEMINI_API_KEY=dotenv-provider-key\\n"
+    )
+    config=Settings(_env_file=env_file)
+    assert config.studio_agent_enabled
+    assert config.gemini_api_key=="dotenv-provider-key"
+    assert "dotenv-provider-key" not in repr(config)
+
+
+def test_agent_not_enabled_when_model_key_is_missing(
+    client, token_factory, monkeypatch,
+):
+    ready(monkeypatch)
+    settings=get_settings()
+    monkeypatch.setattr(settings,"gemini_api_key","")
+    monkeypatch.setattr(settings,"google_api_key","")
+    h=headers(token_factory)
+    assert client.get(ENDPOINT+"/status",headers=h).json()["enabled"] is False
+    response=client.post(ENDPOINT+"/turn",json=payload(),headers=h)
+    assert response.status_code==503
+    assert "Gemini API key is missing" in response.json()["detail"]
+
+
+def test_safe_provider_error_statuses_and_never_expose_key():
+    secret="sensitive-provider-key-value"
+    class ProviderException(Exception):
+        def __init__(self, status):
+            super().__init__(secret)
+            self.status_code=status
+
+    cases=[
+        (401,502,"authentication"),
+        (403,502,"access denied"),
+        (404,502,"model unavailable"),
+        (429,429,"quota"),
+        (400,502,"tool request"),
+        (408,504,"timed out"),
+        (503,502,"unavailable"),
+    ]
+    for source_status, response_status, fragment in cases:
+        mapped,detail=agent._safe_provider_error(
+            ProviderException(source_status),"gemini/gemini-2.5-flash"
+        )
+        assert mapped==response_status
+        assert fragment in detail
+        assert secret not in detail
