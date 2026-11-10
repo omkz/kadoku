@@ -382,3 +382,55 @@
 @media(max-width:700px) {
   .admin-agent-status { flex-direction:column; gap:4px; }
 }
+
+/* Analytics workspace layout: give embedded AG Studio the full available width.
+ * Other admin sections keep their existing narrower content layout. */
+.admin-page-analytics .admin-main {
+  width: 100%;
+  max-width: 1840px;
+  padding: 28px clamp(20px, 2.2vw, 36px) 75px;
+}
+.admin-topline-start { display:flex; align-items:center; flex-wrap:wrap; gap:15px; min-width:0; }
+.admin-sidebar-toggle {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  border:1px solid #D3D0BE;
+  border-radius:9px;
+  padding:8px 11px;
+  font:700 11px/1.2 'Outfit',sans-serif;
+  letter-spacing:0;
+  background:var(--admin-ivory);
+  color:var(--admin-espresso);
+  cursor:pointer;
+}
+.admin-sidebar-toggle:hover {background:#E7EADB;border-color:#B6C4AA;}
+.admin-sidebar-toggle > span:first-child {font-size:17px;line-height:12px;}
+.admin-page-analytics.admin-page-sidebar-collapsed {grid-template-columns:76px minmax(0,1fr);}
+.admin-page-sidebar-collapsed .admin-sidebar {padding:30px 10px 22px;}
+.admin-page-sidebar-collapsed .admin-logo {margin:0 auto 48px;}
+.admin-page-sidebar-collapsed .admin-logo-word,
+.admin-page-sidebar-collapsed .admin-sidebar-label,
+.admin-page-sidebar-collapsed .admin-nav-label,
+.admin-page-sidebar-collapsed .admin-account,
+.admin-page-sidebar-collapsed .admin-storefront-label {display:none;}
+.admin-page-sidebar-collapsed .admin-nav-button {justify-content:center;padding:12px 8px;}
+.admin-page-sidebar-collapsed .admin-nav-button > span:first-child {width:auto;}
+.admin-page-sidebar-collapsed .admin-sidebar-bottom {padding:18px 0 0;text-align:center;}
+.admin-page-sidebar-collapsed .admin-storefront-link {font-size:19px;}
+/* The catalog grid occupies its own full-width report row instead of
+ * sharing a narrow column with the payment-status chart. */
+.admin-page-analytics .admin-studio-canvas {height:1180px;max-width:100%;}
+@media (max-width:720px) {
+  /* Mobile already has horizontal tab navigation: never collapse it to 76px. */
+  .admin-page-analytics .admin-main {padding:23px 17px 60px;}
+  .admin-page-analytics.admin-page-sidebar-collapsed {display:block;}
+  .admin-page-sidebar-collapsed .admin-sidebar {padding:15px 17px 12px;}
+  .admin-page-sidebar-collapsed .admin-logo {margin:0 0 15px;}
+  .admin-page-sidebar-collapsed .admin-logo-word,
+  .admin-page-sidebar-collapsed .admin-nav-label {display:inline;}
+  .admin-page-sidebar-collapsed .admin-nav-button {padding:10px 13px;justify-content:center;}
+  .admin-sidebar-toggle {display:none;}
+  .admin-page-analytics .admin-studio-canvas {height:1020px;}
+}
