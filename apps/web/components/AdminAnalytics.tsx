@@ -48,7 +48,7 @@ type AnalyticsPayload = {
   fulfillment_statuses:{fulfillment_status:string;paid_orders:number}[];
 };
 
-type CheckoutPulseDef = AgBaseWidgetDefinition<"checkout-pulse", {dataMapping:{}}, any, unknown>;
+type CheckoutPulseDef = AgBaseWidgetDefinition<"checkout-pulse", {type:"checkout-pulse";dataMapping:{}}, any, unknown>;
 interface KadokuRegistry extends AgBaseRegistry {
   widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
 }
