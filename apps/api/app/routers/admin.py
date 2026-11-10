@@ -1,9 +1,10 @@
-"""Admin-only catalog and Sandbox order operations.
+"""Admin-only catalog and order operations.
 
 Access is enforced on *every* endpoint against verified Better Auth JWT IDs.
 No PayPal capture, payment status overrides or hard deletes are exposed here.
 """
-from datetime import datetime
+from datetime import datetime, timezone
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import required_admin
 from app.db.session import get_db
-from app.models import Order, Product
+from app.models import FulfillmentEvent, Order, Product
 
 router = APIRouter(
     prefix="/api/v1/admin",
@@ -22,6 +23,41 @@ router = APIRouter(
 
 
 Tag = str
+SKU_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,63}$")
+IMAGE_PATTERN = re.compile(r"^/products/[A-Za-z0-9][A-Za-z0-9_-]*\.(?:webp|png|jpg|jpeg)$")
+FULFILLMENT_STATES = ("unfulfilled", "processing", "shipped", "delivered")
+NEXT_FULFILLMENT_STATE = {
+    "unfulfilled": "processing",
+    "processing": "shipped",
+    "shipped": "delivered",
+}
+
+
+def normalize_sku(value: str | None) -> str | None:
+    if value is None:
+        return None
+    sku = value.strip().upper()
+    if not SKU_PATTERN.fullmatch(sku):
+        raise ValueError("SKU must be 3–64 characters: A-Z, 0-9, period, hyphen or underscore")
+    return sku
+
+
+def validate_image_url(value: str | None) -> str | None:
+    """Only checked-in first-party public assets, no remote URLs or traversal."""
+    if value is None or value == "":
+        return None
+    if not IMAGE_PATTERN.fullmatch(value):
+        raise ValueError("Use a local /products/<filename>.webp/png/jpg/jpeg asset")
+    return value
+
+
+def assert_sku_available(db: Session, sku: str | None, *, exclude_id: str | None = None) -> None:
+    if not sku:
+        return
+    existing = db.scalar(select(Product.id).where(Product.sku == sku))
+    if existing is not None and existing != exclude_id:
+        raise HTTPException(409, "SKU already exists")
+
 
 
 class ProductCreate(BaseModel):
@@ -33,6 +69,8 @@ class ProductCreate(BaseModel):
     price_minor: int = Field(ge=1, le=10_000_000)
     stock: int = Field(ge=0, le=1_000_000)
     active: bool = True
+    sku: str | None = Field(default=None, max_length=64)
+    image_url: str | None = Field(default=None, max_length=255)
     emoji: str = Field(default="🎁", min_length=1, max_length=12)
     interests: list[Tag] = Field(default_factory=list, max_length=10)
     occasions: list[Tag] = Field(default_factory=list, max_length=10)
@@ -55,6 +93,17 @@ class ProductCreate(BaseModel):
         return list(dict.fromkeys(cleaned))
 
 
+    @field_validator("sku")
+    @classmethod
+    def validate_sku(cls, value: str | None) -> str | None:
+        return normalize_sku(value)
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
+
+
 class ProductUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=160)
@@ -63,6 +112,8 @@ class ProductUpdate(BaseModel):
     price_minor: int | None = Field(default=None, ge=1, le=10_000_000)
     stock: int | None = Field(default=None, ge=0, le=1_000_000)
     active: bool | None = None
+    sku: str | None = Field(default=None, max_length=64)
+    image_url: str | None = Field(default=None, max_length=255)
     emoji: str | None = Field(default=None, min_length=1, max_length=12)
     interests: list[Tag] | None = Field(default=None, max_length=10)
     occasions: list[Tag] | None = Field(default=None, max_length=10)
@@ -89,6 +140,17 @@ class ProductUpdate(BaseModel):
         return list(dict.fromkeys(cleaned))
 
 
+    @field_validator("sku")
+    @classmethod
+    def validate_sku(cls, value: str | None) -> str | None:
+        return normalize_sku(value)
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image(cls, value: str | None) -> str | None:
+        return validate_image_url(value)
+
+
 class AdminProductOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -104,6 +166,7 @@ class AdminProductOut(BaseModel):
     occasions: list[str]
     styles: list[str]
     image_url: str | None
+    sku: str | None
     demo_only: bool
 
 
@@ -121,6 +184,7 @@ class Overview(BaseModel):
     orders_total: int
     buyers_total: int
     orders_paid: int
+    awaiting_fulfillment: int
     sandbox_paid_minor: int
 
 
@@ -131,6 +195,7 @@ class AdminOrderOut(BaseModel):
     price_minor: int
     currency: str
     status: str
+    fulfillment_status: str
     buyer_ref: str
     created_at: datetime
 
@@ -140,6 +205,39 @@ class OrderPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class FulfillmentChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_status: str
+    to_status: str
+    tracking_carrier: str | None = Field(default=None, max_length=80)
+    tracking_number: str | None = Field(default=None, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("tracking_carrier", "tracking_number", "note")
+    @classmethod
+    def trim_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class FulfillmentAuditOut(BaseModel):
+    from_status: str
+    to_status: str
+    actor_ref: str
+    note: str | None
+    created_at: datetime
+
+
+class AdminOrderDetail(AdminOrderOut):
+    shipping_address: dict | None
+    tracking_carrier: str | None
+    tracking_number: str | None
+    shipped_at: datetime | None
+    delivered_at: datetime | None
+    history: list[FulfillmentAuditOut]
 
 
 class AdminCustomerOut(BaseModel):
@@ -169,6 +267,10 @@ def overview(db: Session = Depends(get_db)):
         .where(Order.user_id.is_not(None))
     ) or 0
     paid = db.scalar(select(func.count()).select_from(Order).where(Order.status == "paid")) or 0
+    awaiting_fulfillment = db.scalar(
+        select(func.count()).select_from(Order)
+        .where(Order.status == "paid", Order.fulfillment_status == "unfulfilled")
+    ) or 0
     sandbox_total = db.scalar(
         select(func.coalesce(func.sum(Order.price_snapshot_minor), 0))
         .where(Order.status == "paid", Order.currency == "USD")
@@ -176,7 +278,8 @@ def overview(db: Session = Depends(get_db)):
     return Overview(
         products_total=total, products_active=active,
         products_out_of_stock=out_of_stock, orders_total=orders_total,
-        buyers_total=buyers_total, orders_paid=paid, sandbox_paid_minor=sandbox_total,
+        buyers_total=buyers_total, orders_paid=paid,
+        awaiting_fulfillment=awaiting_fulfillment, sandbox_paid_minor=sandbox_total,
     )
 
 
@@ -205,7 +308,9 @@ def products(
 
 @router.post("/products", response_model=AdminProductOut, status_code=201)
 def create_product(payload: ProductCreate, db: Session = Depends(get_db)):
-    # Every new item remains a fictional demo. Never imply live fulfillment.
+    # New listings remain demo-only until supplier verification and live-commerce
+    # onboarding are implemented. Operators can still prepare real catalog metadata.
+    assert_sku_available(db, payload.sku)
     row = Product(**payload.model_dump(), currency="USD", demo_only=True)
     db.add(row)
     db.commit()
@@ -223,8 +328,10 @@ def update_product(
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(400, "No fields to update")
-    if any(value is None for value in changes.values()):
+    if any(value is None for name, value in changes.items() if name not in ("sku", "image_url")):
         raise HTTPException(422, "Fields cannot be null")
+    if "sku" in changes:
+        assert_sku_available(db, changes["sku"], exclude_id=product_id)
     for name, value in changes.items():
         setattr(row, name, value)
     db.commit()
@@ -237,9 +344,14 @@ def orders(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status: str = Query(default="", max_length=24),
+    fulfillment: str = Query(default="", max_length=24),
     db: Session = Depends(get_db),
 ):
+    if fulfillment and fulfillment not in FULFILLMENT_STATES:
+        raise HTTPException(422, "Invalid fulfillment status")
     filters = [Order.status == status] if status else []
+    if fulfillment:
+        filters.append(Order.fulfillment_status == fulfillment)
     total = db.scalar(select(func.count()).select_from(Order).where(*filters)) or 0
     rows = db.execute(
         select(Order, Product.name).join(Product, Product.id == Order.product_id)
@@ -250,13 +362,98 @@ def orders(
         AdminOrderOut(
             id=order.id, product_id=order.product_id, product_name=name,
             price_minor=order.price_snapshot_minor, currency=order.currency,
-            status=order.status,
+            status=order.status, fulfillment_status=order.fulfillment_status,
             buyer_ref=("Guest" if not order.user_id else "…" + order.user_id[-8:]),
             created_at=order.created_at,
         )
         for order, name in rows
     ]
     return OrderPage(items=items, total=total, page=page, page_size=page_size)
+
+
+def admin_order_detail(db: Session, order: Order, product_name: str) -> AdminOrderDetail:
+    history = db.scalars(
+        select(FulfillmentEvent)
+        .where(FulfillmentEvent.order_id == order.id)
+        .order_by(FulfillmentEvent.created_at.asc(), FulfillmentEvent.id.asc())
+    ).all()
+    return AdminOrderDetail(
+        id=order.id, product_id=order.product_id, product_name=product_name,
+        price_minor=order.price_snapshot_minor, currency=order.currency,
+        status=order.status, fulfillment_status=order.fulfillment_status,
+        buyer_ref="Guest" if not order.user_id else "…" + order.user_id[-8:],
+        created_at=order.created_at,
+        shipping_address=order.shipping_address,
+        tracking_carrier=order.tracking_carrier, tracking_number=order.tracking_number,
+        shipped_at=order.shipped_at, delivered_at=order.delivered_at,
+        history=[
+            FulfillmentAuditOut(
+                from_status=event.from_status, to_status=event.to_status,
+                actor_ref="…" + event.actor_user_id[-8:],
+                note=event.note, created_at=event.created_at,
+            )
+            for event in history
+        ],
+    )
+
+
+@router.get("/orders/{order_id}", response_model=AdminOrderDetail)
+def get_admin_order(order_id: str, db: Session = Depends(get_db)):
+    row = db.execute(
+        select(Order, Product.name)
+        .join(Product, Product.id == Order.product_id)
+        .where(Order.id == order_id)
+    ).first()
+    if not row:
+        raise HTTPException(404, "Order not found")
+    order, name = row
+    return admin_order_detail(db, order, name)
+
+
+@router.post("/orders/{order_id}/fulfillment", response_model=AdminOrderDetail)
+def update_fulfillment(
+    order_id: str,
+    payload: FulfillmentChange,
+    actor: str = Depends(required_admin),
+    db: Session = Depends(get_db),
+):
+    """Explicit step-by-step physical operations, independent of payment state.
+
+    Lock order row in Postgres so two admins cannot advance the same state at
+    once. The expected status is also checked to reject stale UI submissions.
+    """
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.status != "paid":
+        raise HTTPException(409, "Payment must be captured before order processing")
+    current = order.fulfillment_status
+    if payload.expected_status != current:
+        raise HTTPException(409, "Order status changed; refresh before editing")
+    if NEXT_FULFILLMENT_STATE.get(current) != payload.to_status:
+        raise HTTPException(409, "Invalid fulfillment transition")
+    if payload.to_status == "shipped":
+        if not isinstance(order.shipping_address, dict) or not order.shipping_address.get("address_line_1") or not order.shipping_address.get("country"):
+            raise HTTPException(409, "Shipping address required before marking shipped")
+        if not payload.tracking_carrier or not payload.tracking_number:
+            raise HTTPException(422, "Carrier and tracking number are required to ship")
+    elif payload.tracking_carrier is not None or payload.tracking_number is not None:
+        raise HTTPException(422, "Tracking details are only accepted when shipping")
+    if payload.to_status == "shipped":
+        order.tracking_carrier = payload.tracking_carrier
+        order.tracking_number = payload.tracking_number
+        order.shipped_at = datetime.now(timezone.utc)
+    if payload.to_status == "delivered":
+        order.delivered_at = datetime.now(timezone.utc)
+    order.fulfillment_status = payload.to_status
+    db.add(FulfillmentEvent(
+        order_id=order.id, actor_user_id=actor,
+        from_status=current, to_status=payload.to_status, note=payload.note,
+    ))
+    db.commit()
+    db.refresh(order)
+    product_name = db.scalar(select(Product.name).where(Product.id == order.product_id))
+    return admin_order_detail(db, order, product_name)
 
 
 @router.get("/customers", response_model=CustomerPage)

@@ -184,3 +184,126 @@ def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
     assert "shipping_address" not in first
     assert "user_id" not in first
     assert client.get("/api/v1/admin/customers?page_size=101", headers=headers).status_code == 422
+
+
+
+def test_admin_catalog_sku_image_validation_and_uniqueness(
+    client, token_factory, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    headers = admin_headers(token_factory)
+    payload = {
+        "name": "A test listing", "description": "Test-only catalog listing",
+        "category": "gifts", "price_minor": 2400, "stock": 3,
+        "sku": "  gift-001 ", "image_url": "/products/default.webp",
+    }
+    created = client.post("/api/v1/admin/products", json=payload, headers=headers)
+    assert created.status_code == 201, created.text
+    product = created.json()
+    assert product["sku"] == "GIFT-001"
+    assert product["image_url"] == "/products/default.webp"
+    duplicate = client.post(
+        "/api/v1/admin/products", json={**payload, "name": "Duplicate"},
+        headers=headers,
+    )
+    assert duplicate.status_code == 409
+    for bad in ["https://evil.test/image.jpg", "/products/../private.jpg", "data:image/svg+xml;base64,a", "/products/abc.svg", "//evil.test/foo.webp"]:
+        failed = client.post(
+            "/api/v1/admin/products", json={**payload, "sku": None, "image_url": bad},
+            headers=headers,
+        )
+        assert failed.status_code == 422, (bad, failed.text)
+    updated = client.patch(
+        "/api/v1/admin/products/" + product["id"],
+        json={"sku": None, "image_url": None}, headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["sku"] is None
+    assert updated.json()["image_url"] is None
+
+
+def test_admin_fulfillment_requires_paid_and_valid_transition_and_audits(
+    client, database, token_factory, monkeypatch
+):
+    from app.models import FulfillmentEvent
+    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    with database() as db:
+        product = db.scalar(select(Product).limit(1))
+        unpaid = Order(
+            product_id=product.id, user_id="customer-12345678",
+            status="pending", price_snapshot_minor=1500, currency="USD",
+            shipping_address={"address_line_1": "Address One", "country": "ID"},
+        )
+        paid = Order(
+            product_id=product.id, user_id="customer-12345678",
+            status="paid", price_snapshot_minor=4200, currency="USD",
+            shipping_address={"full_name": "Private Buyer", "address_line_1": "Hidden Street", "country": "ID"},
+        )
+        db.add_all([unpaid, paid])
+        db.commit()
+        unpaid_id, paid_id = unpaid.id, paid.id
+
+    h = admin_headers(token_factory)
+    detail = client.get(f"/api/v1/admin/orders/{paid_id}", headers=h)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["shipping_address"]["full_name"] == "Private Buyer"
+    assert detail.json()["history"] == []
+    assert detail.json()["fulfillment_status"] == "unfulfilled"
+    assert client.get(f"/api/v1/admin/orders/{paid_id}").status_code == 401
+    assert client.post(f"/api/v1/admin/orders/{paid_id}/fulfillment",
+        json={"expected_status":"unfulfilled","to_status":"processing"}).status_code == 401
+
+    def change(order_id, expected, target, **extra):
+        return client.post(f"/api/v1/admin/orders/{order_id}/fulfillment",
+            json={"expected_status":expected, "to_status":target, **extra}, headers=h)
+
+    assert change(unpaid_id, "unfulfilled", "processing").status_code == 409
+    assert change(paid_id, "unfulfilled", "delivered").status_code == 409
+    assert change(paid_id, "unfulfilled", "processing", tracking_number="123").status_code == 422
+    processing = change(paid_id, "unfulfilled", "processing", note="Ready to pack")
+    assert processing.status_code == 200, processing.text
+    assert processing.json()["fulfillment_status"] == "processing"
+    assert len(processing.json()["history"]) == 1
+    assert processing.json()["history"][0]["actor_ref"] == "…t-user-a"
+    assert change(paid_id, "unfulfilled", "processing").status_code == 409
+    assert change(paid_id, "processing", "shipped").status_code == 422
+    shipped = change(paid_id, "processing", "shipped",
+        tracking_carrier="Test courier", tracking_number="TRK-123")
+    assert shipped.status_code == 200, shipped.text
+    assert shipped.json()["shipped_at"] is not None
+    assert shipped.json()["tracking_number"] == "TRK-123"
+    delivered = change(paid_id, "shipped", "delivered")
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["delivered_at"] is not None
+    assert delivered.json()["fulfillment_status"] == "delivered"
+    assert len(delivered.json()["history"]) == 3
+    assert change(paid_id, "delivered", "processing").status_code == 409
+
+    filtered = client.get("/api/v1/admin/orders?fulfillment=delivered", headers=h)
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["fulfillment_status"] == "delivered"
+    assert client.get("/api/v1/admin/orders?fulfillment=invalid", headers=h).status_code == 422
+    with database() as db:
+        assert db.query(FulfillmentEvent).count() == 3
+
+
+def test_admin_cannot_mark_order_shipped_without_shipping_address(
+    client, database, token_factory, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    with database() as db:
+        product = db.scalar(select(Product).limit(1))
+        row = Order(
+            product_id=product.id, status="paid",
+            price_snapshot_minor=2000, currency="USD", shipping_address=None,
+            fulfillment_status="processing",
+        )
+        db.add(row)
+        db.commit()
+        order_id = row.id
+    response = client.post(f"/api/v1/admin/orders/{order_id}/fulfillment", json={
+        "expected_status":"processing", "to_status":"shipped",
+        "tracking_carrier":"Courier", "tracking_number":"ABC",
+    }, headers=admin_headers(token_factory))
+    assert response.status_code == 409, response.text

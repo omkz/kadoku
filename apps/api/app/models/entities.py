@@ -29,6 +29,7 @@ class Product(Base):
     styles: Mapped[list] = mapped_column(JSON, default=list)
     emoji: Mapped[str] = mapped_column(String(12), default="🎁")
     image_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sku: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     demo_only: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -74,6 +75,11 @@ class Order(Base):
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     status: Mapped[str] = mapped_column(String(24), default="pending")
     shipping_address: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    fulfillment_status: Mapped[str] = mapped_column(String(24), nullable=False, default="unfulfilled")
+    tracking_carrier: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tracking_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paypal_order_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     paypal_capture_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -85,3 +91,16 @@ class PaymentEvent(Base):
     provider_event_id: Mapped[str] = mapped_column(String(128), unique=True)
     event_type: Mapped[str] = mapped_column(String(128))
     processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+class FulfillmentEvent(Base):
+    """Immutable operational audit log; does not affect PayPal state."""
+    __tablename__ = "fulfillment_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    actor_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
