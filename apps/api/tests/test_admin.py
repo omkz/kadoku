@@ -14,6 +14,7 @@ def test_admin_api_fails_closed_for_guests_and_non_admins(client, token_factory,
         "/api/v1/admin/overview",
         "/api/v1/admin/products",
         "/api/v1/admin/orders",
+        "/api/v1/admin/customers",
     ]
     for url in urls:
         assert client.get(url).status_code == 401
@@ -134,3 +135,52 @@ def test_admin_orders_list_all_buyers_without_shipping_pii(
     assert all_rows.json()["total"] == 2
     assert client.get("/api/v1/admin/orders?page_size=999", headers=headers).status_code == 422
     assert client.patch(f"/api/v1/admin/orders/{order['id']}", json={"status": "paid"}, headers=headers).status_code in (404, 405)
+
+
+
+def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
+    client, database, token_factory, monkeypatch
+):
+    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    with database() as db:
+        product = db.scalar(select(Product).limit(1))
+        db.add_all([
+            Order(
+                product_id=product.id, user_id="customer-11111111",
+                status="paid", currency="USD", price_snapshot_minor=2500,
+                shipping_address={"full_name": "Never expose this"},
+                paypal_order_id="sandbox-private-1",
+            ),
+            Order(
+                product_id=product.id, user_id="customer-11111111",
+                status="pending", currency="USD", price_snapshot_minor=5000,
+            ),
+            Order(
+                product_id=product.id, user_id="customer-22222222",
+                status="paid", currency="USD", price_snapshot_minor=3300,
+            ),
+            Order(
+                product_id=product.id, user_id=None,
+                status="paid", currency="USD", price_snapshot_minor=4400,
+            ),
+        ])
+        db.commit()
+
+    headers = admin_headers(token_factory)
+    result = client.get("/api/v1/admin/customers?page_size=1", headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["total"] == 2
+    assert len(result.json()["items"]) == 1
+    next_page = client.get("/api/v1/admin/customers?page=2&page_size=1", headers=headers)
+    assert next_page.status_code == 200
+    assert next_page.json()["total"] == 2
+    buyers = result.json()["items"] + next_page.json()["items"]
+    assert {b["buyer_ref"] for b in buyers} == {"…11111111", "…22222222"}
+    first = next(b for b in buyers if b["buyer_ref"] == "…11111111")
+    assert first["orders_total"] == 2
+    assert first["paid_orders"] == 1
+    assert first["sandbox_paid_minor"] == 2500
+    assert "email" not in first
+    assert "shipping_address" not in first
+    assert "user_id" not in first
+    assert client.get("/api/v1/admin/customers?page_size=101", headers=headers).status_code == 422
