@@ -115,6 +115,7 @@ export default function AdminDashboard() {
   const [access, setAccess] = useState<Access>("checking");
   const [accessError, setAccessError] = useState("");
   const [section, setSection] = useState<Section>("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const productsRequest = useRef(0);
   const ordersRequest = useRef(0);
@@ -379,25 +380,38 @@ export default function AdminDashboard() {
     </main>;
   }
 
-  return <div className="admin-page">
-    <aside className="admin-sidebar">
-      <a className="admin-logo" href="/"><span>✦</span> kadoku<span className="admin-logo-dot">.</span></a>
+  return <div className={"admin-page" + (section==="analytics" ? " admin-page-analytics" : "") + (section==="analytics" && sidebarCollapsed ? " admin-page-sidebar-collapsed" : "")}>
+    <aside className="admin-sidebar" id="kadoku-admin-sidebar">
+      <a className="admin-logo" href="/" aria-label="Kadoku storefront"><span aria-hidden="true">✦</span><span className="admin-logo-word">kadoku<span className="admin-logo-dot">.</span></span></a>
       <p className="admin-sidebar-label">STORE MANAGEMENT</p>
       <nav aria-label="Admin dashboard">
         {sections.map(item=><button type="button" key={item.id}
           className={"admin-nav-button " + (section===item.id ? "is-active" : "")}
           aria-current={section===item.id ? "page" : undefined}
+          title={item.label}
           onClick={()=>{setSection(item.id);setEditing(null);setSelectedOrder(null);}}>
-          <span aria-hidden="true">{item.symbol}</span>{item.label}
+          <span aria-hidden="true">{item.symbol}</span><span className="admin-nav-label">{item.label}</span>
         </button>)}
       </nav>
       <div className="admin-sidebar-bottom">
         <div className="admin-account"><span>Signed in as</span><strong>{session?.user?.email}</strong></div>
-        <a href="/">← View storefront</a>
+        <a href="/" className="admin-storefront-link" aria-label="View storefront" title="View storefront"><span aria-hidden="true">↗</span><span className="admin-storefront-label"> View storefront</span></a>
       </div>
     </aside>
     <main className="admin-main">
-      <div className="admin-topline"><span>KADOKU / ADMIN</span><span className="admin-env">Test payments: PayPal Sandbox</span></div>
+      <div className="admin-topline">
+        <div className="admin-topline-start">
+          {section==="analytics" && <button type="button" className="admin-sidebar-toggle"
+            aria-controls="kadoku-admin-sidebar" aria-expanded={!sidebarCollapsed}
+            aria-label={sidebarCollapsed ? "Expand admin sidebar" : "Collapse admin sidebar"}
+            onClick={()=>setSidebarCollapsed(collapsed=>!collapsed)}>
+            <span aria-hidden="true">{sidebarCollapsed ? "☰" : "☷"}</span>
+            <span>{sidebarCollapsed ? "Expand menu" : "Collapse menu"}</span>
+          </button>}
+          <span>KADOKU / ADMIN</span>
+        </div>
+        <span className="admin-env">Test payments: PayPal Sandbox</span>
+      </div>
       {section==="overview" && <>
         <div className="admin-section-heading"><div><p className="admin-overline">THE BIG PICTURE</p><h1>Overview</h1><p>Catalog, payment and order-processing activity in one place.</p></div>
           <button type="button" className="admin-outline" onClick={()=>void loadOverview()} disabled={overviewBusy}>↻ Refresh</button>
