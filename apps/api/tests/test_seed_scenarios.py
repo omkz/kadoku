@@ -112,10 +112,10 @@ def test_scenario_seed_fails_closed_in_production_live_or_remote(database, monke
             seed_demo_scenarios(db)
         monkeypatch.setattr(settings, "paypal_mode", "sandbox")
         bind = db.get_bind()
-        monkeypatch.setattr(db, "get_bind", lambda: SimpleNamespace(
+        monkeypatch.setattr(db, "get_bind", lambda **kwargs: SimpleNamespace(
             url=SimpleNamespace(host="remote.example")
         ))
         with pytest.raises(RuntimeError, match="local database"):
             seed_demo_scenarios(db)
-        monkeypatch.setattr(db, "get_bind", lambda: bind)
+        monkeypatch.setattr(db, "get_bind", lambda **kwargs: bind)
         assert db.scalar(select(func.count(Order.id))) == 0
