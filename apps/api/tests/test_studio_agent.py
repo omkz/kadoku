@@ -226,3 +226,92 @@ def test_studio_text_only_turn_does_not_use_mcp_workaround(
     assert response.status_code==200, response.text
     assert observed and "_skip_mcp_handler" not in observed[0]
     assert "tools" not in observed[0]
+
+
+def test_studio_history_accepts_decoded_tool_arguments(
+    client, token_factory, monkeypatch,
+):
+    """Studio may replay decoded arguments instead of JSON-string arguments."""
+    ready(monkeypatch)
+    observed=[]
+    async def model(**kwargs):
+        observed.append(kwargs)
+        return fake_response(text="Chart updated")
+    monkeypatch.setattr(agent,"_provider_completion",model)
+    data=payload()
+    data["input"] += [
+        {"kind":"output","type":"function_call","callId":"call_37",
+         "name":"add_widget","arguments":{"category":"coffee"}},
+        {"type":"function_call_output","callId":"call_37","output":'{"success":true}'},
+    ]
+    result=client.post(ENDPOINT+"/turn",json=data,headers=headers(token_factory))
+    assert result.status_code==200, result.text
+    sent=observed[0]["messages"]
+    assert sent[2]["role"]=="assistant"
+    assert sent[2]["tool_calls"][0]["id"]=="call_37"
+    assert sent[2]["tool_calls"][0]["function"]["arguments"]=='{"category": "coffee"}'
+    assert sent[3]["role"]=="tool"
+    assert sent[3]["tool_call_id"]=="call_37"
+
+
+def test_studio_history_accepts_empty_arguments_and_legacy_call_id(
+    client, token_factory, monkeypatch,
+):
+    ready(monkeypatch)
+    observed=[]
+    async def model(**kwargs):
+        observed.append(kwargs)
+        return fake_response(text="Done")
+    monkeypatch.setattr(agent,"_provider_completion",model)
+    data=payload()
+    data["input"] += [
+        {"kind":"output","type":"function_call","id":"call_old_12",
+         "name":"view_schema","arguments":""},
+        {"type":"function_call_output","callId":"call_old_12","output":"Done"},
+    ]
+    response=client.post(ENDPOINT+"/turn",json=data,headers=headers(token_factory))
+    assert response.status_code==200, response.text
+    tool=observed[0]["messages"][2]["tool_calls"][0]
+    assert tool["id"]=="call_old_12"
+    assert tool["function"]["arguments"]=="{}"
+
+
+def test_missing_gemini_function_call_id_is_generated(
+    client, token_factory, monkeypatch,
+):
+    """A null LiteLLM call ID must not poison the following AG Studio turn."""
+    ready(monkeypatch)
+    async def model(**kwargs):
+        call=SimpleNamespace(
+            id=None,
+            function=SimpleNamespace(name="add_widget",arguments='{"category":"coffee"}'),
+        )
+        return fake_response(text="", calls=[call])
+    monkeypatch.setattr(agent,"_provider_completion",model)
+    h=headers(token_factory)
+    first=client.post(ENDPOINT+"/turn",json=payload(),headers=h)
+    assert first.status_code==200, first.text
+    call=first.json()["output"][0]
+    assert call["type"]=="function_call"
+    assert call["callId"].startswith("call_")
+    body=payload()
+    body["input"] += [
+        call,
+        {"type":"function_call_output","callId":call["callId"],"output":"OK"},
+    ]
+    second=client.post(ENDPOINT+"/turn",json=body,headers=h)
+    assert second.status_code==200, second.text
+
+
+def test_invalid_prior_call_reports_shape_without_sensitive_data(
+    client, token_factory, monkeypatch,
+):
+    ready(monkeypatch)
+    body=payload()
+    body["input"] += [{"kind":"output","type":"function_call",
+                       "callId":None,"name":"add_widget",
+                       "arguments":{"private":"private-name"}}]
+    response=client.post(ENDPOINT+"/turn",json=body,headers=headers(token_factory))
+    assert response.status_code==422
+    assert response.json()["detail"]=="Invalid prior tool call: missing tool call ID"
+    assert "private-name" not in response.text
