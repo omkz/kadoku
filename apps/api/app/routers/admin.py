@@ -24,7 +24,7 @@ router = APIRouter(
 
 Tag = str
 SKU_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9._-]{2,63}$")
-IMAGE_PATTERN = re.compile(r"^/products/[A-Za-z0-9][A-Za-z0-9_-]*\\.(?:webp|png|jpg|jpeg)$")
+IMAGE_PATTERN = re.compile(r"^/products/[A-Za-z0-9][A-Za-z0-9_-]*\.(?:webp|png|jpg|jpeg)$")
 FULFILLMENT_STATES = ("unfulfilled", "processing", "shipped", "delivered")
 NEXT_FULFILLMENT_STATE = {
     "unfulfilled": "processing",
