@@ -48,7 +48,7 @@ type AnalyticsPayload = {
   fulfillment_statuses:{fulfillment_status:string;paid_orders:number}[];
 };
 
-type CheckoutPulseDef = AgBaseWidgetDefinition<"checkout-pulse", {}, {}, unknown>;
+type CheckoutPulseDef = AgBaseWidgetDefinition<"checkout-pulse", {dataMapping:{}}, any, unknown>;
 interface KadokuRegistry extends AgBaseRegistry {
   widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
 }
@@ -175,7 +175,7 @@ export default function AdminAnalytics() {
     return ()=>{cancelled=true;};
   },[days,refreshKey]);
 
-  const data=useMemo<AgDataSourcesDefinition|undefined>(()=>{
+  const data=useMemo<AgDataSourcesDefinition<KadokuRegistry>|undefined>(()=>{
     if(!report) return undefined;
     return {sources:[
       {id:"catalog",data:report.catalog},
