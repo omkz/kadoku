@@ -60,8 +60,7 @@ interface KadokuRegistry extends AgBaseRegistry {
   widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
 }
 
-// v2 contained a catalog grid mapping that referenced nullable fields and
-// numeric columns without supported aggregations. Migrate the mapping on load.
+// The default analytics layout is upgraded independently of saved user edits.
 const STUDIO_PROMPTS:AgAiPromptStarter[] = [
   {
     label:"Chart paid gift categories",
@@ -77,11 +76,14 @@ const STUDIO_PROMPTS:AgAiPromptStarter[] = [
   },
 ];
 const STUDIO_ADAPTER = createKadokuStudioAdapter();
-const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v3";
-const PREVIOUS_STORAGE_KEY = "kadoku-admin-ag-studio-layout-v2";
+// v4 moves Catalog to full width and hides the long Product ID column.
+const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v4";
+const LEGACY_STORAGE_KEYS = [
+  "kadoku-admin-ag-studio-layout-v3",
+  "kadoku-admin-ag-studio-layout-v2",
+] as const;
 
 const CATALOG_GRID_COLUMNS = [
-  {id:"catalog.product_id"},
   {id:"catalog.product_name"},
   {id:"catalog.category"},
   {id:"catalog.price_usd",aggregation:"avg"},
@@ -149,8 +151,8 @@ const DEFAULT_REPORT:AgReportState<KadokuRegistry> = {
       "checkout-health":{xTrack:0,yTrack:0,xSpan:24,ySpan:14},
       "product-performance":{xTrack:0,yTrack:14,xSpan:12,ySpan:18},
       "daily-payments":{xTrack:12,yTrack:14,xSpan:12,ySpan:18},
-      "payment-status":{xTrack:0,yTrack:32,xSpan:9,ySpan:17},
-      "catalog-stock":{xTrack:9,yTrack:32,xSpan:15,ySpan:17},
+      "payment-status":{xTrack:0,yTrack:32,xSpan:24,ySpan:17},
+      "catalog-stock":{xTrack:0,yTrack:49,xSpan:24,ySpan:24},
     },
   }],
   selectedPageId:"commerce",
@@ -204,26 +206,43 @@ export default function AdminAnalytics() {
   useEffect(()=>{
     try {
       const current=window.localStorage.getItem(STORAGE_KEY);
-      const legacy=!current && window.localStorage.getItem(PREVIOUS_STORAGE_KEY);
-      const saved=current || legacy;
+      const legacyKey=current ? undefined : LEGACY_STORAGE_KEYS.find(key=>window.localStorage.getItem(key)!==null);
+      const saved=current ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
       if(saved){
         const parsed:unknown=JSON.parse(saved);
         if(validStoredState(parsed)){
-          // Repair the v2 mapping once; never overwrite edits saved under v3.
-          if(legacy){
+          if(legacyKey){
             for(const page of parsed.pages){
               const widgets=page.widgets as Record<string,unknown>|undefined;
               const grid=widgets?.["catalog-stock"] as
                 {type?:string;dataMapping?:{cols?:unknown}}|undefined;
               if(grid?.type==="grid"){
+                // Keep custom charts and filters, but avoid long internal
+                // product IDs in the default inventory table.
                 grid.dataMapping={...grid.dataMapping,cols:[...CATALOG_GRID_COLUMNS]};
+              }
+
+              // Only move widgets if the saved layout is the original
+              // five-widget arrangement. Preserve operator/AI custom layouts.
+              const layout=page.widgetLayout as Record<string,{
+                xTrack:number;yTrack:number;xSpan:number;ySpan:number;
+              }>|undefined;
+              const oldStock=layout?.["catalog-stock"];
+              const oldPayment=layout?.["payment-status"];
+              if(layout && Object.keys(layout).length===5 &&
+                oldStock?.xTrack===9 && oldStock.yTrack===32 &&
+                oldStock.xSpan===15 && oldStock.ySpan===17 &&
+                oldPayment?.xTrack===0 && oldPayment.yTrack===32 &&
+                oldPayment.xSpan===9 && oldPayment.ySpan===17){
+                layout["payment-status"]={...oldPayment,xTrack:0,xSpan:24};
+                layout["catalog-stock"]={...oldStock,xTrack:0,yTrack:49,xSpan:24,ySpan:24};
               }
             }
           }
           setInitialState(parsed);
-          if(legacy){
+          if(legacyKey){
             window.localStorage.setItem(STORAGE_KEY,JSON.stringify(parsed));
-            window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
+            for(const key of LEGACY_STORAGE_KEYS)window.localStorage.removeItem(key);
           }
         }
       }
@@ -271,7 +290,7 @@ export default function AdminAnalytics() {
   const restoreDefault=useCallback(()=>{
     try {
       window.localStorage.removeItem(STORAGE_KEY);
-      window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
+      for(const key of LEGACY_STORAGE_KEYS)window.localStorage.removeItem(key);
     } catch {}
     setInitialState(DEFAULT_REPORT);
     setRemountKey(index=>index+1);
