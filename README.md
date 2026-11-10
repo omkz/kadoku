@@ -196,13 +196,35 @@ Use the normal backend/frontend commands above, and install the new frontend dep
 
 ```bash
 cd apps/web
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
 The dashboard includes prebuilt AG Studio charts and an inventory grid, plus a **Kadoku Checkout Health custom widget registered inside AG Studio**. This custom widget uses server-aggregated payment/fulfillment totals and does not currently participate in AG Studio cross-filtering; the other charts and grid retain built-in interactive capabilities. **View** mode is initially selected; **Edit layout** enables drag-and-drop reporting. Layout changes are auto-saved to the local browser and **Reset layout** restores the defaults. Source datasets are fetched on demand, not saved to browser storage. Actual payment and fulfillment records always come from PayPal **Sandbox**; displayed captured amounts are test figures, **not business revenue**. No artificial recommendation/conversion metrics are shown: measuring those requires recommendation-event instrumentation.
 
-AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. **Studio Agent Framework is not yet implemented** in this integration; it requires a dedicated LLM adapter, safe server-side proxy, and browser QA. The custom Checkout Health widget is already registered in AG Studio.
+AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. The custom Checkout Health widget is registered in AG Studio.
+
+### AI Analyst via Studio Agent Framework (opt-in)
+
+Kadoku uses **AG Studio's actual built-in AI harness, agents, tools and chat panel**, connected to a small in-project adapter at `apps/web/lib/studio-agent-adapter.ts`. The adapter sends each turn to the **admin-only** FastAPI route `POST /api/v1/admin/analytics/agent/turn`. FastAPI converts AG Studio messages and tool schemas to LiteLLM Chat Completions with a provider such as Gemini; the LLM returns tool calls to AG Studio, **which performs dashboard updates in the browser**. Provider credentials never reach the browser, and there is no separate ChatGPT API requirement.
+
+**Local setup:** Install the backend's optional AI dependencies and set these values in **`apps/api/.env` only**, then restart FastAPI:
+
+```bash
+cd apps/api
+uv sync --extra ai --extra test
+# In apps/api/.env:
+# STUDIO_AGENT_ENABLED=true
+# STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash
+# GEMINI_API_KEY=<your own provider key>
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout**, open AG Studio's built-in **AI chat panel**, then try a prompt starter such as **Chart paid gift categories**. The assistant will use Studio tools to read the existing aggregate datasets and add/change a widget. AG Studio should show actual tool calls; if the model only replies in text, inspect the backend error and provider's tool support. You may reuse `AI_MODEL=gemini/...` instead of specifying `STUDIO_AGENT_MODEL`, but the dedicated setting is preferable because the admin agent uses more tokens than shopper intent extraction.
+
+**Constraints:** AG Studio's model uses only the aggregated data exposed in its datasets plus tool results. Tool schemas and query results can be sent to Gemini to answer analytics questions. The endpoint is authenticated, explicitly opt-in, restricted to text, and has a per-process **90-turn/hour/admin** cap; this is a development safeguard, **not** a distributed production billing limiter. For deployment, add persistent rate limits/budgets, logging, provider access policies and review the AG Studio AI licence. It cannot charge PayPal or mutate catalog/fulfillment records. Captured values are **Sandbox test payments only**, and no recommendation-event conversion data exists yet.
+
+Tests exercise the proxy and round-trip tool calls with a fake provider, but **live Gemini calls and browser agent interactions still require manual QA before merge**.
 
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
