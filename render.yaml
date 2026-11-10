@@ -49,10 +49,10 @@ services:
     plan: free
     region: singapore
     rootDir: apps/web
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
-    startCommand: pnpm exec next start --hostname 0.0.0.0 --port $PORT
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm build
+    startCommand: corepack pnpm exec next start --hostname 0.0.0.0 --port $PORT
     # Better Auth tables are not owned by Alembic; initialize once on first deploy.
-    initialDeployHook: pnpm dlx auth@1.7.18 migrate --yes
+    initialDeployHook: corepack pnpm dlx auth@1.7.18 migrate --yes
     healthCheckPath: /
     envVars:
       - key: NODE_VERSION
