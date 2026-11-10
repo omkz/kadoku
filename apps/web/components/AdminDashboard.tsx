@@ -425,7 +425,7 @@ export default function AdminDashboard() {
               <label className="admin-field">Stock<input required inputMode="numeric" type="number" min="0" step="1" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})}/></label>
               <label className="admin-field">SKU (optional)<input maxLength={64} placeholder="GIFT-001" value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})}/></label>
               <label className="admin-field">Product image path<input placeholder="/products/item.webp" value={form.imageUrl} onChange={e=>setForm({...form,imageUrl:e.target.value})}/></label>
-              {/^\\/products\\/[A-Za-z0-9_-]+\\.(webp|png|jpg|jpeg)$/.test(form.imageUrl) && <div className="admin-field admin-field-wide"><span>Image preview</span><img className="admin-media-preview" src={form.imageUrl} alt="Product preview"/></div>}
+              {/^\/products\/[A-Za-z0-9_-]+\.(webp|png|jpg|jpeg)$/.test(form.imageUrl) && <div className="admin-field admin-field-wide"><span>Image preview</span><img className="admin-media-preview" src={form.imageUrl} alt="Product preview"/></div>}
               <label className="admin-field">Emoji<input required maxLength={12} value={form.emoji} onChange={e=>setForm({...form,emoji:e.target.value})}/></label>
               <label className="admin-field">Interests (comma-separated)<input value={form.interests} onChange={e=>setForm({...form,interests:e.target.value})} placeholder="coffee, reading"/></label>
               <label className="admin-field">Occasions (comma-separated)<input value={form.occasions} onChange={e=>setForm({...form,occasions:e.target.value})} placeholder="birthday, thank_you"/></label>
