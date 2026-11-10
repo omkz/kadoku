@@ -166,18 +166,27 @@ This implementation uses the Orders API `payer-action` redirect and PayPal's app
 - **Legacy guest orders** (`user_id IS NULL`) remain unassigned and are **not automatically visible** to newly signed-in users. No migration or ownership guessing is performed.
 - Product name and emoji currently come from the catalog; the order amount and currency are preserved from checkout-time snapshots. This remains a **Sandbox-only demo**, not commercial fulfillment.
 
-## Admin dashboard (MVP)
+## Admin back office (operations foundation)
 
-The separate **`/admin`** area is a wide, desktop-friendly workspace (the shopper homepage remains mobile-first at 470px). It includes:
+The private **`/admin`** workspace is designed around daily store operations, with a desktop-first work surface and existing Sand / Olive / Espresso theme.
 
-- **Overview:** total and active products, out-of-stock items, Sandbox orders, and captured test payment amounts. Sandbox captures are **not business revenue**.
-- **Products:** server-paginated search/filter, add, edit, activate/deactivate, USD price and stock editing. A deactivated product disappears from recommendations while linked orders remain intact. All newly created products are **demo-only**. Existing catalog images are preserved; image upload is not implemented.
-- **Orders:** server-paginated, read-only order list and payment statuses, with shortened buyer references. Shipping addresses, payment identifiers and other private details are not exposed in the list.
-- **Customers:** paginated, read-only **order-linked signed-in buyers**. Buyer references are truncated; show counts, paid-order counts and captured Sandbox amounts. This is **not** the entire Better Auth user registry, and guests are excluded because their identities cannot be reliably linked.
-- **Settings:** read-only operator account and demo/Sandbox safeguards; secrets and payment mode remain server-managed.
-- **Pagination:** Products, Orders and Customers default to 20 rows/page with selectable 10/20/50 and Previous/Next. Filtering resets the page; the API queries only the requested slice (maximum 100).
+- **Overview:** catalog counts, paid orders awaiting processing and payment totals. **PayPal Sandbox test captures are not revenue.**
+- **Products:** admin-only paginated search/filter, create and edit, SKU (unique and optional for legacy products), price, stock, categories, recommendation tags, publish/unpublish, and a first-party image asset path. Image paths are restricted to `/products/filename.webp` (also png/jpg/jpeg); images must already be deployed in `apps/web/public/products`. File upload and external media storage are **not** included.
+- **Orders:** payment status and **fulfillment status are independent**. Paid orders can advance through `unfulfilled → processing → shipped → delivered` with explicit sequential transitions. Shipping requires a recorded address plus carrier and tracking number. The admin order detail displays delivery address only behind server-verified admin access, while paginated lists show only shortened buyer references. Each fulfillment transition is auditable with actor, previous/new state, note and timestamp.
+- **Customers:** paginated, read-only order-linked signed-in buyer summary. Guest orders are excluded; emails and addresses are not exposed here.
+- **Settings:** read-only environment/access safeguards. Sensitive config remains server-side.
+- **Pagination:** server-side 10/20/50 rows for Products, Orders, Customers, with query filters and in-flight result protection.
 
-No AG Grid or TanStack Table dependency is required for this bounded MVP. React tables with API-side pagination and filtering are used; revisit a grid library only if bulk-editing or more complex workflows become necessary.
+**Guardrails:** The existing fictional seed catalog remains marked `demo_only`, and new products are test-only until a supplier-onboarding, inventory integrity and live-commerce review exist. The PayPal integration remains **Sandbox-only**, and staff cannot override payment status, charge/refund buyers or mark a payment captured. Fulfillment transitions in this version are **internal operational records**, not courier bookings, real dispatches or buyer notifications. Do not mark test shipments as real deliveries.
+
+Apply the new DB migration before using this version:
+
+```bash
+cd apps/api
+uv run alembic upgrade head
+```
+
+No new frontend dependency or grid library is needed. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
 
 ### Give an account admin access
 
