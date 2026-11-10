@@ -1,9 +1,13 @@
 "use client";
 
 import {useCallback, useEffect, useMemo, useState} from "react";
-import {AgStudio, createWidgets} from "ag-studio-react";
+import {AgStudio, AgStudioProvider, createWidgets} from "ag-studio-react";
 import CheckoutPulseWidget from "./CheckoutPulseWidget";
 import {
+  AgStudioAiModule,
+  createAiHarness,
+  type AgAiHarnessSetup,
+  type AgAiPromptStarter,
   type AgBaseRegistry,
   type AgBaseWidgetDefinition,
   type AgDataSourcesDefinition,
@@ -15,6 +19,7 @@ import {
   studioTheme,
 } from "ag-studio";
 import {api, dollars} from "@/lib/api";
+import {createKadokuStudioAdapter} from "@/lib/studio-agent-adapter";
 
 type Days = 7 | 30 | 90;
 type Summary = {
@@ -56,6 +61,21 @@ interface KadokuRegistry extends AgBaseRegistry {
 
 // v2 contained a catalog grid mapping that referenced nullable fields and
 // numeric columns without supported aggregations. Migrate the mapping on load.
+const STUDIO_PROMPTS:AgAiPromptStarter[] = [
+  {
+    label:"Chart paid gift categories",
+    prompt:"Add a bar chart ranking gift categories by Sandbox paid orders. Use product_performance, group by category and sum paid_orders. All data is test-only.",
+  },
+  {
+    label:"Explore inventory",
+    prompt:"Create a chart of total available stock by category from the catalog source.",
+  },
+  {
+    label:"Explain payments",
+    prompt:"Explain the payment status breakdown in the current data. These are PayPal Sandbox test orders, not real revenue.",
+  },
+];
+const STUDIO_ADAPTER = createKadokuStudioAdapter();
 const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v3";
 const PREVIOUS_STORAGE_KEY = "kadoku-admin-ag-studio-layout-v2";
 
@@ -161,6 +181,22 @@ export default function AdminAnalytics() {
   const [initialState,setInitialState]=useState<AgReportState<KadokuRegistry>>(DEFAULT_REPORT);
   const [stateReady,setStateReady]=useState(false);
   const [layoutNotice,setLayoutNotice]=useState("");
+  const [agentEnabled,setAgentEnabled]=useState(false);
+  const [agentStatus,setAgentStatus]=useState<"checking"|"ready"|"disabled"|"error">("checking");
+
+  // This is a server decision, not an exposed NEXT_PUBLIC key or a UI toggle.
+  useEffect(()=>{
+    let cancelled=false;
+    api<{enabled:boolean}>("/admin/analytics/agent/status").then(status=>{
+      if(cancelled)return;
+      setAgentEnabled(status.enabled);
+      setAgentStatus(status.enabled?"ready":"disabled");
+      if(status.enabled)setMode("edit");
+    }).catch(()=>{
+      if(!cancelled)setAgentStatus("error");
+    });
+    return ()=>{cancelled=true;};
+  },[]);
 
   // Saved layouts contain only chart/widget state. Data remains in the
   // admin-protected API and is not persisted in browser storage.
@@ -241,6 +277,12 @@ export default function AdminAnalytics() {
     setLayoutNotice("Default layout restored");
   },[]);
 
+  const ai=useMemo<AgAiHarnessSetup>(()=>({api:studioApi})=>
+    createAiHarness(studioApi,{
+      adapter:STUDIO_ADAPTER,
+      promptStarters:STUDIO_PROMPTS,
+    }),[]);
+
   const widgets=useMemo<AgWidgetsConfig<KadokuRegistry>>(()=>createWidgets<KadokuRegistry>({
     additionalTypes:[{
       id:"checkout-pulse",
@@ -300,12 +342,28 @@ export default function AdminAnalytics() {
             onClick={restoreDefault}>Reset layout</button>
         </div>
       </div>
+      {agentStatus==="ready" && <div className="admin-agent-status">
+        <strong>AI Analyst enabled</strong>
+        <span>Open the AI chat panel inside AG Studio. Try “Chart paid gift categories”.
+        The AI uses Studio tools to change this dashboard; requests go through the protected Kadoku API.</span>
+      </div>}
+      {agentStatus==="disabled" && <p className="admin-agent-hint">
+        AI Analyst is off. To enable it locally, set STUDIO_AGENT_ENABLED=true
+        and STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash in apps/api/.env,
+        supply GEMINI_API_KEY, then restart FastAPI.
+      </p>}
+      {agentStatus==="error" && <p className="admin-agent-hint">
+        Could not check AI Analyst availability. The analytics dashboard remains usable.
+      </p>}
       {layoutNotice && <p className="admin-layout-notice" role="status">{layoutNotice}</p>}
       <div className="admin-studio-canvas" data-ag-theme-mode="light">
-        <AgStudio<KadokuRegistry> key={remountKey} data={data} mode={mode}
-          initialState={initialState} widgets={widgets}
-          context={{checkoutPulse:summary}} theme={KADOKU_THEME}
-          onStateUpdated={onStateUpdated}/>
+        <AgStudioProvider modules={[AgStudioAiModule]}>
+          <AgStudio<KadokuRegistry> key={remountKey+(agentEnabled?1000:0)}
+            data={data} mode={mode} ai={agentEnabled?ai:undefined}
+            initialState={initialState} widgets={widgets}
+            context={{checkoutPulse:summary}} theme={KADOKU_THEME}
+            onStateUpdated={onStateUpdated}/>
+        </AgStudioProvider>
       </div>
       <p className="admin-disclaimer">This report uses aggregated internal test-order data. No customer identities, delivery addresses, PayPal IDs or secrets are sent to the visualization engine. Recommendation exposure and conversion events are not yet tracked.</p>
     </div>}
