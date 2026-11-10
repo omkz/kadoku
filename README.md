@@ -247,6 +247,8 @@ This makes **two small real provider requests** with no customer or transaction 
 
 The authenticated Studio Agent endpoint also logs just exception class chain, upstream status code and tool/message counts. Share those diagnostic lines, not exception messages, full HTTP payloads or secrets.
 
+**LiteLLM 1.108.3 function-call regression:** A confirmed upstream issue ([BerriAI/litellm#50781](https://github.com/BerriAI/litellm/issues/50781)) shows that normal `tools=[...]` calls on the SDK-only installation mistakenly import the optional MCP proxy handler and raise `ModuleNotFoundError: mcp` (surfaced as `APIConnectionError 500`). Kadoku's Studio backend explicitly rejects MCP/provider-hosted tools; it now sets LiteLLM's private `_skip_mcp_handler=True` flag **only for ordinary function-tool requests**. The minimal tool diagnostic uses the same workaround. The flag should be reviewed or removed after the upstream LiteLLM fix, because it is not a stable public API. No MCP SDK or LiteLLM proxy is required for Kadoku's in-browser AG Studio tools.
+
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
 
