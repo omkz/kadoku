@@ -1,6 +1,6 @@
 "use client";
 
-import {useCallback, useEffect, useState, type FormEvent} from "react";
+import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 
@@ -95,6 +95,9 @@ export default function AdminDashboard() {
   const [accessError, setAccessError] = useState("");
   const [section, setSection] = useState<Section>("overview");
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const productsRequest = useRef(0);
+  const ordersRequest = useRef(0);
+  const customersRequest = useRef(0);
   const [overview, setOverview] = useState<Overview|null>(null);
   const [overviewBusy, setOverviewBusy] = useState(false);
   const [overviewError, setOverviewError] = useState("");
@@ -155,6 +158,7 @@ export default function AdminDashboard() {
   }, [isPending, session?.user?.id]);
 
   const loadProducts = useCallback(async () => {
+    const requestId = ++productsRequest.current;
     setProductBusy(true);
     setProductError("");
     const params = new URLSearchParams({
@@ -163,15 +167,17 @@ export default function AdminDashboard() {
     if (search) params.set("search", search);
     if (activeFilter !== "all") params.set("active", activeFilter);
     try {
-      setProducts(await api<Page<AdminProduct>>("/admin/products?" + params.toString()));
+      const result = await api<Page<AdminProduct>>("/admin/products?" + params.toString());
+      if (requestId === productsRequest.current) setProducts(result);
     } catch (error) {
-      setProductError(error instanceof Error ? error.message : "Could not load products.");
+      if (requestId === productsRequest.current) setProductError(error instanceof Error ? error.message : "Could not load products.");
     } finally {
-      setProductBusy(false);
+      if (requestId === productsRequest.current) setProductBusy(false);
     }
   }, [productPage, search, activeFilter, pageSize]);
 
   const loadOrders = useCallback(async () => {
+    const requestId = ++ordersRequest.current;
     setOrdersBusy(true);
     setOrdersError("");
     const params = new URLSearchParams({
@@ -179,26 +185,29 @@ export default function AdminDashboard() {
     });
     if (orderStatusFilter) params.set("status", orderStatusFilter);
     try {
-      setOrders(await api<Page<AdminOrder>>("/admin/orders?" + params.toString()));
+      const result = await api<Page<AdminOrder>>("/admin/orders?" + params.toString());
+      if (requestId === ordersRequest.current) setOrders(result);
     } catch (error) {
-      setOrdersError(error instanceof Error ? error.message : "Could not load orders.");
+      if (requestId === ordersRequest.current) setOrdersError(error instanceof Error ? error.message : "Could not load orders.");
     } finally {
-      setOrdersBusy(false);
+      if (requestId === ordersRequest.current) setOrdersBusy(false);
     }
   }, [ordersPage, orderStatusFilter, pageSize]);
 
   const loadCustomers = useCallback(async () => {
+    const requestId = ++customersRequest.current;
     setCustomersBusy(true);
     setCustomersError("");
     const params = new URLSearchParams({
       page: String(customersPage), page_size: String(pageSize),
     });
     try {
-      setCustomers(await api<Page<AdminCustomer>>("/admin/customers?" + params.toString()));
+      const result = await api<Page<AdminCustomer>>("/admin/customers?" + params.toString());
+      if (requestId === customersRequest.current) setCustomers(result);
     } catch (error) {
-      setCustomersError(error instanceof Error ? error.message : "Could not load customers.");
+      if (requestId === customersRequest.current) setCustomersError(error instanceof Error ? error.message : "Could not load customers.");
     } finally {
-      setCustomersBusy(false);
+      if (requestId === customersRequest.current) setCustomersBusy(false);
     }
   }, [customersPage, pageSize]);
 
