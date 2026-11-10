@@ -89,7 +89,7 @@ export type Occasion = {
 };
 
 export async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders(/^\/(recipients|occasions|orders|checkout\/paypal|auth\/me)(\/|$)/.test(path))};
+  const headers: Record<string,string> = {"Content-Type":"application/json", ...await authHeaders(/^\/(admin|recipients|occasions|orders|checkout\/paypal|auth\/me)(\/|$)/.test(path))};
   const response = await fetch(`/backend/api/v1${path}`, {method, headers, ...(body === undefined ? {} : {body: JSON.stringify(body)}), cache: "no-store"});
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
