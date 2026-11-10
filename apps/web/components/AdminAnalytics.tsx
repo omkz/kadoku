@@ -8,6 +8,7 @@ import {
   createAiHarness,
   type AgAiHarnessSetup,
   type AgAiPromptStarter,
+  type AgStudioApi,
   type AgBaseRegistry,
   type AgBaseWidgetDefinition,
   type AgDataSourcesDefinition,
@@ -277,8 +278,10 @@ export default function AdminAnalytics() {
     setLayoutNotice("Default layout restored");
   },[]);
 
-  const ai=useMemo<AgAiHarnessSetup<KadokuRegistry>>(()=>({api:studioApi})=>
-    createAiHarness(studioApi,{
+  const ai=useMemo<AgAiHarnessSetup>(()=>({api:studioApi})=>
+    // AG Studio 3.1 exposes the core API type in AgAiHarnessSetup, while
+    // createAiHarness needs the full runtime API supplied by this callback.
+    createAiHarness(studioApi as unknown as AgStudioApi,{
       adapter:STUDIO_ADAPTER,
       promptStarters:STUDIO_PROMPTS,
     }),[]);
