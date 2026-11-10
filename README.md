@@ -186,7 +186,73 @@ cd apps/api
 uv run alembic upgrade head
 ```
 
-No new frontend dependency or grid library is needed. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
+AG Studio is only used inside Analytics; regular Products/Orders tables remain unchanged. This feature adds the commercial `ag-studio` + `ag-studio-react` packages pinned to matching **3.1.0** versions. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
+
+### AG Studio Analytics (feature branch)
+
+The **Analytics** item in `/admin` embeds AG Studio into the existing Next.js admin shell, backed by **`GET /api/v1/admin/analytics?days=30`**. The API returns server-aggregated payment, fulfillment, daily activity and product-performance datasets for 7, 30 or 90 days. The same admin-only JWT allowlist protects this endpoint; no customer accounts, addresses, PayPal identifiers, shipping records or raw payments are exposed to the client analytics engine.
+
+Use the normal backend/frontend commands above, and install the new frontend dependency once after checking out this branch:
+
+```bash
+cd apps/web
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+The dashboard includes prebuilt AG Studio charts and an inventory grid, plus a **Kadoku Checkout Health custom widget registered inside AG Studio**.
+
+**Analytics desktop layout:** The Analytics section expands beyond the regular admin 1320px width limit (up to 1840px), with a **Collapse menu / Expand menu** control in the top bar. The AG Studio **Catalog & available stock** grid now occupies a dedicated full-width report row and defaults to Product / Category / Price / Stock columns, avoiding a long internal Product ID. On first load, the previous v2/v3 browser layout is upgraded if it still has the stock five-widget arrangement; custom/AI-modified layouts keep their positions. Click **Reset layout** to adopt the new default manually. Other admin sections are unchanged. This custom widget uses server-aggregated payment/fulfillment totals and does not currently participate in AG Studio cross-filtering; the other charts and grid retain built-in interactive capabilities. **View** mode is initially selected; **Edit layout** enables drag-and-drop reporting. Layout changes are auto-saved to the local browser and **Reset layout** restores the defaults. Source datasets are fetched on demand, not saved to browser storage. Actual payment and fulfillment records always come from PayPal **Sandbox**; displayed captured amounts are test figures, **not business revenue**. No artificial recommendation/conversion metrics are shown: measuring those requires recommendation-event instrumentation.
+
+AG Studio can run locally without a licence; a paid or trial licence is required for production use without trial restrictions. The custom Checkout Health widget is registered in AG Studio.
+
+### AI Analyst via Studio Agent Framework (opt-in)
+
+Kadoku uses **AG Studio's actual built-in AI harness, agents, tools and chat panel**, connected to a small in-project adapter at `apps/web/lib/studio-agent-adapter.ts`. The adapter sends each turn to the **admin-only** FastAPI route `POST /api/v1/admin/analytics/agent/turn`. FastAPI converts AG Studio messages and tool schemas to LiteLLM Chat Completions with a provider such as Gemini; the LLM returns tool calls to AG Studio, **which performs dashboard updates in the browser**. Provider credentials never reach the browser, and there is no separate ChatGPT API requirement.
+
+**Local setup:** Install the backend's optional AI dependencies and set these values in **`apps/api/.env` only**, then restart FastAPI:
+
+```bash
+cd apps/api
+uv sync --extra ai --extra test
+# In apps/api/.env:
+# STUDIO_AGENT_ENABLED=true
+# STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash
+# GEMINI_API_KEY=<your own provider key>
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout**, open AG Studio's built-in **AI chat panel**, then try a prompt starter such as **Chart paid gift categories**. The assistant will use Studio tools to read the existing aggregate datasets and add/change a widget. AG Studio should show actual tool calls; if the model only replies in text, inspect the backend error and provider's tool support. You may reuse `AI_MODEL=gemini/...` instead of specifying `STUDIO_AGENT_MODEL`, but the dedicated setting is preferable because the admin agent uses more tokens than shopper intent extraction.
+
+**Constraints:** AG Studio's model uses only the aggregated data exposed in its datasets plus tool results. Tool schemas and query results can be sent to Gemini to answer analytics questions. The endpoint is authenticated, explicitly opt-in, restricted to text, and has a per-process **90-turn/hour/admin** cap; this is a development safeguard, **not** a distributed production billing limiter. For deployment, add persistent rate limits/budgets, logging, provider access policies and review the AG Studio AI licence. It cannot charge PayPal or mutate catalog/fulfillment records. Captured values are **Sandbox test payments only**, and no recommendation-event conversion data exists yet.
+
+Tests exercise the proxy and round-trip tool calls with a fake provider, but **live Gemini calls and browser agent interactions still require manual QA before merge**.
+
+**AG Studio history error `Invalid prior tool call`:** The chat adapter now normalises prior tool arguments supplied either as JSON text or an already-decoded object, permits empty arguments for parameterless tools, and ensures every Gemini function call has a non-empty `callId` before sending it back to Studio. These changes preserve the tool-call-to-tool-result pairing required by AG Studio. If an older thread was created before the fix and still contains a malformed call, start a **new Studio AI conversation** to test the corrected producer and parser together. Do not reset the saved dashboard layout unless you actually want to reset it.
+
+#### If Studio AI fails with LiteLLM APIConnectionError (500)
+
+**Do not enable LiteLLM's full request/response debug output** or paste provider credentials into issue reports. LiteLLM's `APIConnectionError (500)` is a generic fallback for some internal translation failures as well as genuine network problems, so a 502 from Kadoku does not establish the root cause.
+
+With the Gemini key already configured in `apps/api/.env`, run:
+
+```bash
+cd apps/api
+uv run --extra ai python -m app.studio_diagnostics
+```
+
+This makes **two small real provider requests** with no customer or transaction data, reports the LiteLLM version, model, success/failure, HTTP status and exception **class names only** (never raw provider exception text or API keys). It intentionally costs a small amount of provider quota. Interpret the results:
+
+- **Plain text FAIL:** start with Gemini API connectivity, model access, credentials, quota and LiteLLM version.
+- **Plain text OK; Minimal tool calling FAIL:** isolate Gemini function calling or LiteLLM's function schema transformation.
+- **Both OK:** provider access is viable; investigate the much larger AG Studio tool definitions/history. Capturing a stripped-down diagnostic of tool schema size/field types is safer than logging full prompts or tool data.
+
+The authenticated Studio Agent endpoint also logs just exception class chain, upstream status code and tool/message counts. Share those diagnostic lines, not exception messages, full HTTP payloads or secrets.
+
+**LiteLLM 1.108.3 function-call regression:** A confirmed upstream issue ([BerriAI/litellm#50781](https://github.com/BerriAI/litellm/issues/50781)) shows that normal `tools=[...]` calls on the SDK-only installation mistakenly import the optional MCP proxy handler and raise `ModuleNotFoundError: mcp` (surfaced as `APIConnectionError 500`). Kadoku's Studio backend explicitly rejects MCP/provider-hosted tools; it now sets LiteLLM's private `_skip_mcp_handler=True` flag **only for ordinary function-tool requests**. The minimal tool diagnostic uses the same workaround. The flag should be reviewed or removed after the upstream LiteLLM fix, because it is not a stable public API. No MCP SDK or LiteLLM proxy is required for Kadoku's in-browser AG Studio tools.
+
+`apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
+
 
 ### Give an account admin access
 
@@ -201,7 +267,7 @@ No new frontend dependency or grid library is needed. Implement supplier-backed 
 
 **Security:** The FastAPI admin endpoints validate each Better Auth JWT (signed EdDSA, issuer, audience, expiration and subject) and require its `sub` to be in the server-side `ADMIN_USER_IDS` allowlist. An empty allowlist denies everybody. Visitors cannot fetch admin data merely by opening the page; protected actions must pass the API's admin authorization check. Do not copy the local example ID or secrets into production.
 
-The admin MVP deliberately **cannot** manually mark an order paid, initiate refunds, charge a buyer, override PayPal status, or delete products permanently. This remains demo infrastructure, not a commercial store. There is no migration, extra frontend package or new authorization table.
+The admin cannot manually mark an order paid, initiate refunds, charge a buyer, override PayPal status, or delete products permanently. Fulfillment and analytics remain internal Sandbox-stage tools, not a production commerce service. The analytics feature adds no DB migration or authorization table.
 
 ## Automated tests
 
