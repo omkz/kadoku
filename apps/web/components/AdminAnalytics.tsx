@@ -1,9 +1,14 @@
 "use client";
 
 import {useCallback, useEffect, useMemo, useState} from "react";
-import {AgStudio} from "ag-studio-react";
+import {AgStudio, createWidgets} from "ag-studio-react";
+import CheckoutPulseWidget from "./CheckoutPulseWidget";
 import {
+  type AgBaseRegistry,
   type AgDataSourcesDefinition,
+  type AgDefaultWidgetDefinition,
+  type AgWidgetDefinition,
+  type AgWidgetsConfig,
   type AgReportState,
   type AgStudioStateUpdatedEvent,
   studioTheme,
@@ -43,13 +48,24 @@ type AnalyticsPayload = {
   fulfillment_statuses:{fulfillment_status:string;paid_orders:number}[];
 };
 
-const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v1";
+interface CheckoutPulseDef extends AgWidgetDefinition {
+  type:"checkout-pulse";
+  dataMapping:{};
+}
+interface KadokuRegistry extends AgBaseRegistry {
+  widgets:readonly (AgDefaultWidgetDefinition | CheckoutPulseDef)[];
+}
+
+const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v2";
 
 /** Studio's documented pre-built report state. No fake values or placeholder rows. */
-const DEFAULT_REPORT:AgReportState = {
+const DEFAULT_REPORT:AgReportState<KadokuRegistry> = {
   pages:[{
     id:"commerce",
     widgets:{
+      "checkout-health":{
+        type:"checkout-pulse", dataMapping:{},
+      },
       "product-performance":{
         type:"column-chart-grouped",
         dataMapping:{
@@ -96,10 +112,11 @@ const DEFAULT_REPORT:AgReportState = {
       },
     },
     widgetLayout:{
-      "product-performance":{xTrack:0,yTrack:0,xSpan:12,ySpan:18},
-      "daily-payments":{xTrack:12,yTrack:0,xSpan:12,ySpan:18},
-      "payment-status":{xTrack:0,yTrack:18,xSpan:9,ySpan:17},
-      "catalog-stock":{xTrack:9,yTrack:18,xSpan:15,ySpan:17},
+      "checkout-health":{xTrack:0,yTrack:0,xSpan:24,ySpan:14},
+      "product-performance":{xTrack:0,yTrack:14,xSpan:12,ySpan:18},
+      "daily-payments":{xTrack:12,yTrack:14,xSpan:12,ySpan:18},
+      "payment-status":{xTrack:0,yTrack:32,xSpan:9,ySpan:17},
+      "catalog-stock":{xTrack:9,yTrack:32,xSpan:15,ySpan:17},
     },
   }],
   selectedPageId:"commerce",
@@ -113,7 +130,7 @@ const KADOKU_THEME = studioTheme.withParams({
   browserColorScheme:"light",
 });
 
-function validStoredState(value:unknown):value is AgReportState {
+function validStoredState(value:unknown):value is AgReportState<KadokuRegistry> {
   if (!value || typeof value!=="object") return false;
   const candidate=value as {pages?:unknown;selectedPageId?:unknown};
   return Array.isArray(candidate.pages) && candidate.pages.length>0
@@ -128,7 +145,7 @@ export default function AdminAnalytics() {
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [mode,setMode]=useState<"view"|"edit">("view");
-  const [initialState,setInitialState]=useState<AgReportState>(DEFAULT_REPORT);
+  const [initialState,setInitialState]=useState<AgReportState<KadokuRegistry>>(DEFAULT_REPORT);
   const [stateReady,setStateReady]=useState(false);
   const [layoutNotice,setLayoutNotice]=useState("");
 
@@ -189,6 +206,18 @@ export default function AdminAnalytics() {
     setLayoutNotice("Default layout restored");
   },[]);
 
+  const widgets=useMemo<AgWidgetsConfig<KadokuRegistry>>(()=>createWidgets<KadokuRegistry>({
+    additionalTypes:[{
+      id:"checkout-pulse",
+      label:"Kadoku Checkout Health",
+      form:params=>params.createDefaults({dataMappingItems:[]}),
+      comp:CheckoutPulseWidget,
+      defaultSize:{width:550,height:240},
+      minSize:{width:320,height:170},
+    }],
+    menu:[{label:"Kadoku",widgetIds:["checkout-pulse"]}],
+  }),[]);
+
   const summary=report?.summary;
   const paymentRate=summary && summary.orders>0
     ? Math.round(summary.paid_orders/summary.orders*100):null;
@@ -224,17 +253,6 @@ export default function AdminAnalytics() {
       <div className="admin-stat"><span>Sandbox captured</span><strong>{dollars(summary.sandbox_captured_minor)}</strong><small>Test payments, not revenue</small></div>
     </div>}
 
-    {summary && <div className="admin-journey">
-      <div><h2>Payment & fulfillment pulse</h2><p>Verified order states, not a recommendation-to-purchase conversion funnel.</p></div>
-      <div className="admin-journey-stages">
-        <div><span>Checkout orders</span><strong>{summary.orders}</strong></div>
-        <span aria-hidden="true">→</span>
-        <div><span>Captured</span><strong>{summary.paid_orders}</strong></div>
-        <span aria-hidden="true">→</span>
-        <div><span>Awaiting processing</span><strong>{summary.awaiting_fulfillment}</strong></div>
-      </div>
-    </div>}
-
     {stateReady && data && <div className="admin-studio-wrap">
       <div className="admin-studio-controls">
         <div><strong>AG Studio report builder</strong><small>Charts, grids, cross-filtering and custom layouts · stored in this browser</small></div>
@@ -249,8 +267,9 @@ export default function AdminAnalytics() {
       </div>
       {layoutNotice && <p className="admin-layout-notice" role="status">{layoutNotice}</p>}
       <div className="admin-studio-canvas" data-ag-theme-mode="light">
-        <AgStudio key={remountKey} data={data} mode={mode}
-          initialState={initialState} theme={KADOKU_THEME}
+        <AgStudio<KadokuRegistry> key={remountKey} data={data} mode={mode}
+          initialState={initialState} widgets={widgets}
+          context={{checkoutPulse:summary}} theme={KADOKU_THEME}
           onStateUpdated={onStateUpdated}/>
       </div>
       <p className="admin-disclaimer">This report uses aggregated internal test-order data. No customer identities, delivery addresses, PayPal IDs or secrets are sent to the visualization engine. Recommendation exposure and conversion events are not yet tracked.</p>
