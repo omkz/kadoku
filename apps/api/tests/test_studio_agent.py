@@ -162,9 +162,9 @@ def test_dotenv_key_is_loaded_into_settings(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     env_file=tmp_path/"studio-env"
     env_file.write_text(
-        "STUDIO_AGENT_ENABLED=true\\n"
-        "STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash\\n"
-        "GEMINI_API_KEY=dotenv-provider-key\\n"
+        "STUDIO_AGENT_ENABLED=true\n"
+        "STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash\n"
+        "GEMINI_API_KEY=dotenv-provider-key\n"
     )
     config=Settings(_env_file=env_file)
     assert config.studio_agent_enabled
