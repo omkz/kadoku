@@ -172,14 +172,15 @@ export default function AdminAnalytics() {
       if(saved){
         const parsed:unknown=JSON.parse(saved);
         if(validStoredState(parsed)){
-          // The old Catalog grid used optional SKU and unaggregated numeric
-          // fields; repair only that widget so other saved edits survive.
-          for(const page of parsed.pages){
-            const widgets=page.widgets as Record<string,unknown>|undefined;
-            const grid=widgets?.["catalog-stock"] as
-              {type?:string;dataMapping?:{cols?:unknown}}|undefined;
-            if(grid?.type==="grid"){
-              grid.dataMapping={...grid.dataMapping,cols:[...CATALOG_GRID_COLUMNS]};
+          // Repair the v2 mapping once; never overwrite edits saved under v3.
+          if(legacy){
+            for(const page of parsed.pages){
+              const widgets=page.widgets as Record<string,unknown>|undefined;
+              const grid=widgets?.["catalog-stock"] as
+                {type?:string;dataMapping?:{cols?:unknown}}|undefined;
+              if(grid?.type==="grid"){
+                grid.dataMapping={...grid.dataMapping,cols:[...CATALOG_GRID_COLUMNS]};
+              }
             }
           }
           setInitialState(parsed);
