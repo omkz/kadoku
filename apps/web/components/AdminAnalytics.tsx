@@ -288,6 +288,9 @@ export default function AdminAnalytics() {
   },[]);
 
   const restoreDefault=useCallback(()=>{
+    // Agent-created widgets are saved with the layout. Do not discard them
+    // accidentally when the admin only meant to adjust the dashboard.
+    if(!window.confirm("Restore the default Analytics layout? This will remove your saved dashboard changes, including charts created by AI."))return;
     try {
       window.localStorage.removeItem(STORAGE_KEY);
       for(const key of LEGACY_STORAGE_KEYS)window.localStorage.removeItem(key);
