@@ -16,3 +16,11 @@ jobs:
       - name: Run unit tests
         working-directory: apps/api
         run: pytest -q
+      - name: Verify database migration upgrade and rollback
+        working-directory: apps/api
+        env:
+          DATABASE_URL: sqlite:///./kadoku-migration-ci.db
+        run: |
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
