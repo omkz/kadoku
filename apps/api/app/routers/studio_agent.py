@@ -43,8 +43,52 @@ def _configured_model() -> str:
     return settings.studio_agent_model.strip() or settings.ai_model.strip()
 
 
+def _provider_key(model: str) -> str | None:
+    """Get provider key loaded by Pydantic from apps/api/.env or process env."""
+    settings = get_settings()
+    if model.startswith("gemini/"):
+        return (settings.gemini_api_key or settings.google_api_key).strip()
+    if model.startswith("openai/"):
+        return settings.openai_api_key.strip()
+    # Other LiteLLM providers may use different credentials and conventions.
+    return None
+
+
 def _enabled() -> bool:
-    return get_settings().studio_agent_enabled and bool(_configured_model())
+    if not get_settings().studio_agent_enabled or not _configured_model():
+        return False
+    model = _configured_model()
+    if model.startswith(("gemini/", "openai/")):
+        return bool(_provider_key(model))
+    return True
+
+
+def _safe_provider_error(exc: Exception, model: str) -> tuple[int, str]:
+    """Map SDK error class/status to actionable guidance; never return raw errors.
+
+    Provider exception strings may contain API keys, account details, or tool
+    payloads. Only the status and class name go to backend logs.
+    """
+    status = getattr(exc, "status_code", None)
+    code = status if isinstance(status, int) else None
+    kind = type(exc).__name__.lower()
+    provider = "Gemini" if model.startswith("gemini/") else "LLM"
+
+    if code == 401 or "authenticationerror" in kind:
+        return 502, f"{provider} authentication failed. Check the API key in apps/api/.env."
+    if code == 403 or "permissiondenied" in kind:
+        return 502, f"{provider} access denied. Check model access and API key permissions."
+    if code == 404 or "notfound" in kind:
+        return 502, f"{provider} model unavailable. Check STUDIO_AGENT_MODEL."
+    if code == 429 or "ratelimit" in kind:
+        return 429, f"{provider} quota or rate limit reached. Check provider quota before retrying."
+    if code == 400 or "badrequest" in kind or "unsupportedparam" in kind:
+        return 502, f"{provider} rejected this AI tool request. Check model tool-calling support."
+    if code == 408 or "timeout" in kind:
+        return 504, f"{provider} request timed out. Retry later."
+    if code in (500, 502, 503, 504) or "connectionerror" in kind:
+        return 502, f"{provider} service or network unavailable. Retry later."
+    return 502, f"{provider} request failed. Check backend logs for the exception type."
 
 
 def _reserve_call(actor: str) -> None:
@@ -205,6 +249,11 @@ async def turn(
 ):
     response.headers["Cache-Control"] = "no-store"
     if not _enabled():
+        model = _configured_model()
+        if get_settings().studio_agent_enabled and model.startswith("gemini/"):
+            raise HTTPException(503, "Gemini API key is missing from apps/api/.env")
+        if get_settings().studio_agent_enabled and model.startswith("openai/"):
+            raise HTTPException(503, "OpenAI API key is missing from apps/api/.env")
         raise HTTPException(503, "Studio AI is not configured on the server")
     # Cap decoded JSON too, since request body may be decompressed by an upstream
     # reverse proxy and content-length cannot be trusted.
@@ -223,6 +272,12 @@ async def turn(
     }
     if tools:
         kwargs.update(tools=tools, tool_choice=choice)
+    # A Pydantic settings .env file does not populate the process environment.
+    # LiteLLM needs this credential passed explicitly instead of assuming
+    # GEMINI_API_KEY was exported by a shell.
+    provider_key = _provider_key(_configured_model())
+    if provider_key:
+        kwargs["api_key"] = provider_key
     # Do not combine Gemini JSON MIME responses with tool declarations.
     if not tools and payload.responseFormat and payload.responseFormat.get("type") != "text":
         kwargs["response_format"] = {"type": "json_object"}
@@ -231,8 +286,13 @@ async def turn(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("Studio AI provider failed: %s", type(exc).__name__)
-        raise HTTPException(502, "Studio AI provider unavailable; check server configuration") from None
+        code = getattr(exc, "status_code", None)
+        logger.warning(
+            "Studio AI provider request failed: type=%s status=%s",
+            type(exc).__name__, code if isinstance(code, int) else "unknown",
+        )
+        http_code, message = _safe_provider_error(exc, _configured_model())
+        raise HTTPException(http_code, message) from None
 
     if not result.choices:
         raise HTTPException(502, "AI returned no choices")
