@@ -195,9 +195,11 @@ def analytics(
         (item.paid_orders for item in fulfillment_statuses
          if item.fulfillment_status == "unfulfilled"), 0
     )
-    sandbox_minor = int(round(
-        sum(item.sandbox_captured_usd for item in payment_statuses) * 100
-    ))
+    # Keep money in integer minor units; chart data is converted only for display.
+    sandbox_minor = db.scalar(
+        select(func.coalesce(func.sum(Order.price_snapshot_minor), 0))
+        .where(*within, Order.status == "paid", Order.currency == "USD")
+    ) or 0
     return AnalyticsResponse(
         days=days,
         generated_at=now,
