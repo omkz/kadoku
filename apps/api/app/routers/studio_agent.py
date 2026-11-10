@@ -124,6 +124,49 @@ def _text_content(value: Any) -> str:
     return "\n".join(parts)
 
 
+def _history_call_id(item: dict[str, Any]) -> str:
+    """Use Studio callId; tolerate an older item whose id is the only locator.
+
+    IDs must match tool results, so do not invent an unrelated random id here.
+    A missing callId in *new* responses is fixed at the producer below.
+    """
+    call_id = item.get("callId") or item.get("call_id")
+    if not call_id:
+        call_id = item.get("id")
+    if not isinstance(call_id, str) or not (1 <= len(call_id) <= 128):
+        logger.warning(
+            "Studio prior tool call missing id: keys=%s",
+            sorted(key for key in item if key in ("callId", "call_id", "id", "name", "arguments")),
+        )
+        raise HTTPException(422, "Invalid prior tool call: missing tool call ID")
+    return call_id
+
+
+def _history_call_arguments(value: Any) -> str:
+    """Normalise Studio's string/object argument representations.
+
+    The adapter and OpenAI use a JSON *string* but some Studio tool history
+    entries may already hold decoded object arguments. Preserve their data.
+    """
+    if value is None or value == "":
+        return "{}"
+    if isinstance(value, dict):
+        result = json.dumps(value, ensure_ascii=False)
+    elif isinstance(value, str):
+        result = value
+    else:
+        raise HTTPException(422, "Invalid prior tool call: unsupported argument type")
+    if len(result) > 30_000:
+        raise HTTPException(422, "Invalid prior tool call: arguments too large")
+    try:
+        parsed = json.loads(result)
+    except (ValueError, TypeError):
+        raise HTTPException(422, "Invalid prior tool call: arguments must be JSON") from None
+    if not isinstance(parsed, dict):
+        raise HTTPException(422, "Invalid prior tool call: arguments must be an object")
+    return json.dumps(parsed, ensure_ascii=False)
+
+
 def _chat_messages(turn: StudioTurn) -> list[dict[str, Any]]:
     system = (
         "You assist with Kadoku admin's aggregated PayPal Sandbox dashboard. "
@@ -145,17 +188,12 @@ def _chat_messages(turn: StudioTurn) -> list[dict[str, Any]]:
             if content:
                 messages.append({"role": role, "content": content})
         elif item_type == "function_call" and kind == "output":
-            call_id, name, arguments = item.get("callId"), item.get("name"), item.get("arguments")
-            if (not isinstance(call_id, str) or len(call_id) > 128
-                or not isinstance(name, str) or not SAFE_NAME.fullmatch(name)
-                or not isinstance(arguments, str) or len(arguments) > 30_000):
-                raise HTTPException(422, "Invalid prior tool call")
-            try:
-                parsed = json.loads(arguments)
-                if not isinstance(parsed, dict):
-                    raise ValueError("Tool args must be an object")
-            except (ValueError, TypeError):
-                raise HTTPException(422, "Invalid prior tool arguments") from None
+            call_id = _history_call_id(item)
+            name = item.get("name")
+            if not isinstance(name, str) or not SAFE_NAME.fullmatch(name):
+                logger.warning("Studio prior tool call has invalid name: type=%s", type(name).__name__)
+                raise HTTPException(422, "Invalid prior tool call: invalid tool name")
+            arguments = _history_call_arguments(item.get("arguments"))
             # Chat Completions requires tool calls attached to an assistant message.
             if messages[-1]["role"] == "assistant" and "tool_calls" not in messages[-1]:
                 target = messages[-1]
@@ -335,10 +373,17 @@ async def turn(
             raise HTTPException(502, "AI returned invalid tool arguments") from None
         if not isinstance(args, dict):
             raise HTTPException(502, "AI tool arguments must be an object")
+        # Some LiteLLM/Gemini responses omit function call IDs. AG Studio
+        # requires one to pair a function_call with its output on the next
+        # turn; mint an id here rather than sending a null callId that fails
+        # the history parser on the following request.
+        call_id = getattr(tool_call, "id", None)
+        if not isinstance(call_id, str) or not (1 <= len(call_id) <= 128):
+            call_id = "call_" + uuid4().hex
         output.append({
             "id": "fc_" + uuid4().hex,
             "kind": "output", "type": "function_call",
-            "callId": tool_call.id, "name": tool_call.function.name,
+            "callId": call_id, "name": tool_call.function.name,
             "arguments": json.dumps(_strip_null_object_properties(args)),
             "status": "completed",
         })
