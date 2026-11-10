@@ -433,6 +433,8 @@ def update_fulfillment(
     if NEXT_FULFILLMENT_STATE.get(current) != payload.to_status:
         raise HTTPException(409, "Invalid fulfillment transition")
     if payload.to_status == "shipped":
+        if not isinstance(order.shipping_address, dict) or not order.shipping_address.get("address_line_1") or not order.shipping_address.get("country"):
+            raise HTTPException(409, "Shipping address required before marking shipped")
         if not payload.tracking_carrier or not payload.tracking_number:
             raise HTTPException(422, "Carrier and tracking number are required to ship")
     elif payload.tracking_carrier is not None or payload.tracking_number is not None:
