@@ -277,7 +277,7 @@ export default function AdminAnalytics() {
     setLayoutNotice("Default layout restored");
   },[]);
 
-  const ai=useMemo<AgAiHarnessSetup>(()=>({api:studioApi})=>
+  const ai=useMemo<AgAiHarnessSetup<KadokuRegistry>>(()=>({api:studioApi})=>
     createAiHarness(studioApi,{
       adapter:STUDIO_ADAPTER,
       promptStarters:STUDIO_PROMPTS,
