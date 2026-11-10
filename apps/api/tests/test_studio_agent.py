@@ -315,3 +315,41 @@ def test_invalid_prior_call_reports_shape_without_sensitive_data(
     assert response.status_code==422
     assert response.json()["detail"]=="Invalid prior tool call: missing tool call ID"
     assert "private-name" not in response.text
+
+
+def test_admin_ai_hourly_limit_is_bounded_per_account(monkeypatch):
+    """No provider call should be needed to exhaust the request budget."""
+    from collections import defaultdict, deque
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(agent, "_rate_windows", defaultdict(deque))
+    monkeypatch.setattr(agent, "MAX_CALLS_PER_HOUR", 2)
+    monkeypatch.setattr(agent.time, "monotonic", lambda: 1000.0)
+
+    agent._reserve_call("admin-one")
+    agent._reserve_call("admin-one")
+    try:
+        agent._reserve_call("admin-one")
+    except HTTPException as exc:
+        assert exc.status_code == 429
+        assert "hourly" in exc.detail
+    else:
+        assert False, "A third call must be denied"
+
+    # Another admin gets a separate budget.
+    agent._reserve_call("admin-two")
+    assert len(agent._rate_windows["admin-two"]) == 1
+
+
+def test_admin_ai_hourly_limit_expires_old_requests(monkeypatch):
+    from collections import defaultdict, deque
+
+    monkeypatch.setattr(agent, "_rate_windows", defaultdict(deque))
+    monkeypatch.setattr(agent, "MAX_CALLS_PER_HOUR", 2)
+    times = iter((1000.0, 1001.0, 4602.0))
+    monkeypatch.setattr(agent.time, "monotonic", lambda: next(times))
+
+    agent._reserve_call("admin")
+    agent._reserve_call("admin")
+    agent._reserve_call("admin")  # both old requests have expired
+    assert list(agent._rate_windows["admin"]) == [4602.0]
