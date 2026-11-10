@@ -6,6 +6,45 @@ import Image from "next/image";
 
 type Screen = "home" | "ideas" | "details" | "checkout" | "people" | "orders" | "order-detail";
 const checkoutStorageKey = "kadoku_pending_checkout";
+
+/** Days until the next annual occurrence. UTC prevents DST from changing sort order. */
+function daysUntilMoment(moment:Occasion, now:Date):number {
+  if(moment.month<1 || moment.month>12 || moment.day<1 || moment.day>31)return Infinity;
+  const currentYear=now.getFullYear();
+  const today=Date.UTC(currentYear,now.getMonth(),now.getDate());
+  // Feb 29 is only eligible in leap years; never roll it over to March 1.
+  for(let year=currentYear;year<=currentYear+4;year++){
+    const candidate=Date.UTC(year,moment.month-1,moment.day);
+    const actual=new Date(candidate);
+    if(actual.getUTCMonth()!==moment.month-1 || actual.getUTCDate()!==moment.day)continue;
+    if(candidate>=today)return Math.round((candidate-today)/86_400_000);
+  }
+  return Infinity;
+}
+
+/** Sort all saved moments for the homepage; do not change their stored order. */
+function upcomingMoments(moments:Occasion[], now=new Date()):Occasion[] {
+  return [...moments].sort((a,b)=>
+    daysUntilMoment(a,now)-daysUntilMoment(b,now) || a.id.localeCompare(b.id));
+}
+
+/** Show people with the nearest upcoming birthday first; unknown birthdays last. */
+function peopleByUpcomingBirthday(people:Recipient[], moments:Occasion[], now=new Date()):Recipient[] {
+  const nextBirthday=new Map<string,number>();
+  for(const moment of moments){
+    if(moment.kind!=="birthday")continue;
+    const days=daysUntilMoment(moment,now);
+    if(!Number.isFinite(days))continue;
+    const previous=nextBirthday.get(moment.recipient_id);
+    if(previous===undefined || days<previous)nextBirthday.set(moment.recipient_id,days);
+  }
+  return [...people].sort((a,b)=>{
+    const left=nextBirthday.get(a.id) ?? Infinity;
+    const right=nextBirthday.get(b.id) ?? Infinity;
+    return left-right || a.name.localeCompare(b.name,undefined,{sensitivity:"base"}) ||
+      a.id.localeCompare(b.id);
+  });
+}
 function statusLabel(status: string) {
   if (status === "paid") return "Paid";
   if (status === "approval_pending") return "Awaiting payment";
@@ -488,8 +527,8 @@ export default function KadokuApp() {
           </div>
         </section>
         {session?.user && occasions.length>0 && <section className="upcoming">
-          <div className="section-head"><h2>Saved moments</h2><button onClick={()=>setScreen("people")}>View all ↗</button></div>
-          {occasions.slice(0,2).map(o=>{
+          <div className="section-head"><h2>Upcoming moments</h2><button onClick={()=>setScreen("people")}>View all ↗</button></div>
+          {upcomingMoments(occasions).slice(0,2).map(o=>{
             const person=recipients.find(p=>p.id===o.recipient_id);
             return <button key={o.id} className="occasion-row" onClick={()=>{setSelectedRecipient(o.recipient_id);setPrompt(`Help me choose a ${o.kind} gift for ${person?.name||"someone special"}. Their interests are ${(person?.interests||[]).join(", ")}.`);}}>
               <span className="occasion-date">{new Date(2000,o.month-1,o.day).toLocaleString("en-US",{month:"short"})}<strong>{o.day}</strong></span>
@@ -711,7 +750,7 @@ export default function KadokuApp() {
           <h3 className="people-heading">Saved people</h3>
           {peopleBusy ? <p className="muted" role="status">Loading saved people…</p>
              : peopleError ? <div><p role="alert" className="auth-error">{peopleError}</p><button type="button" className="text-button" onClick={()=>void loadPeople()}>Try again</button></div>
-             : recipients.length===0 ? <p className="muted">No saved people yet.</p> : recipients.map(p=>{
+             : recipients.length===0 ? <p className="muted">No saved people yet.</p> : peopleByUpcomingBirthday(recipients,occasions).map(p=>{
             const birthday=occasions.find(o=>o.recipient_id===p.id && o.kind==="birthday");
             return <div className="person-card" key={p.id}><span className="person-avatar">{p.name[0].toUpperCase()}</span><div><b>{p.name}</b><p>{p.interests.join(" · ")||"No interests yet"}{birthday?` · Birthday ${birthday.month}/${birthday.day}`:""}</p></div><button onClick={()=>{setSelectedRecipient(p.id);setPrompt(`I need a thoughtful gift for ${p.name}, who loves ${p.interests.join(", ")||"meaningful surprises"}. Budget $100.`);setScreen("home");}}>Find gift ↗</button></div>;
           })}
