@@ -6,6 +6,6 @@
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "typecheck:web": "npm --workspace apps/web run typecheck",
-    "seed:users": "cd apps/api && uv run python -m app.seed_users --confirm-demo-users"
+    "db:seed": "cd apps/api && uv run python -m app.seed_users --confirm-demo-users"
   }
 }

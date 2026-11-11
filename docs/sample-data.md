@@ -44,40 +44,56 @@ duplicate user records, fixture orders or recipients. On first run, it also
 seeds demo-only products and synthetic business data for the customer
 account unless `--skip-business-data` is specified.
 
-## Localhost
+## Localhost — single seed command
 
-1. Ensure `apps/web/.env.local` `AUTH_DATABASE_URL` and
-   `apps/api/.env` `DATABASE_URL` reference the **same local PostgreSQL**.
-   Apply Alembic and Better Auth migrations, including the Admin plugin.
-2. Start Next.js on `http://localhost:3000` so Better Auth signup works.
-3. From `apps/api`, set three **different**, at-least-16-character
-   development-only passwords through your shell (do not commit them):
+Use the same workflow as Rails: migrate the schema, then run **one explicit
+seed** during initial setup. The seed is **never** triggered automatically
+when the local web or API server starts.
 
+1. Use the same **local PostgreSQL** database in:
+   - `apps/web/.env.local`: `AUTH_DATABASE_URL`
+   - `apps/api/.env`: `DATABASE_URL`
+
+   Keep `ENVIRONMENT=development`, `PAYPAL_MODE=sandbox`, and
+   `BETTER_AUTH_URL=http://localhost:3000` in the API settings.
+2. Apply both schema migrations once:
+   - `cd apps/api && uv run alembic upgrade head`
+   - `cd apps/web && npx --yes auth@latest migrate --yes --config ./lib/auth.ts`
+3. Start the Next.js development server in a **separate terminal**:
    ```sh
-   export DEMO_CUSTOMER_PASSWORD='choose-one-strong-demo-password'
-   export DEMO_ADMIN_PASSWORD='choose-a-second-strong-demo-password'
-   export DEMO_OWNER_PASSWORD='choose-a-third-strong-demo-password'
-   uv run python -m app.seed_users --confirm-demo-users
+   pnpm dev:web
    ```
+   Better Auth must be accessible at `http://localhost:3000` because
+   it creates and verifies accounts via its official signup/login routes.
+   You do **not** need to run FastAPI just for seeding.
+4. From the repository root, run:
+   ```sh
+   pnpm db:seed
+   ```
+   Enter and confirm **three different passwords (16+ characters)** when
+   prompted. Password input is hidden; nothing is hardcoded in Git.
+   If `DEMO_CUSTOMER_PASSWORD`, `DEMO_ADMIN_PASSWORD`, and
+   `DEMO_OWNER_PASSWORD` are already exported in your shell, the
+   command uses them without prompting.
 
-   From the repository root, the equivalent is `pnpm seed:users`
-   (or `npm run seed:users`).
+The command creates/verifies three Better Auth demo accounts and their roles,
+100 demo products, synthetic analytics orders, customer My Orders, My People,
+and sample birthdays. It **does not perform any PayPal transactions**.
 
-   The above values are placeholders; choose your own private passwords.
-   The command provisions the three identities and their sample catalog,
-   analytics and customer fixtures. It does **not** touch PayPal.
+You can safely rerun `pnpm db:seed` with the **same passwords**; it
+verifies the existing demo identities and inserts only missing fixtures.
+Passwords are never reset, and mismatched accounts/roles cause a refusal.
 
-4. Sign in as `owner@demo.test` and open `/admin` → Team; then sign in
-   as `admin@demo.test` and `customer@demo.test` to compare permissions.
+Sign in at `http://localhost:3000` as `owner@demo.test` for Team
+management, `admin@demo.test` for admin operations, or
+`customer@demo.test` for the customer journey.
 
-You can optionally override the three local emails with
-`DEMO_CUSTOMER_EMAIL`, `DEMO_ADMIN_EMAIL`, and `DEMO_OWNER_EMAIL`.
-
-To seed *additional* already-registered accounts without creating them:
-
+To seed a separate **already registered** local account with business data
+only, use the lower-level helper:
 ```sh
+cd apps/api
 uv run python -m app.seed_sample \
-  --email "your-other-test-account@example.test" --confirm-demo-data
+  --email "your-test-account@example.test" --confirm-demo-data
 ```
 
 ## Render staging (later; don't run on live production)

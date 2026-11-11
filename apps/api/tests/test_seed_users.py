@@ -7,7 +7,8 @@ from sqlalchemy import func, select, text
 from app.core.config import get_settings
 from app.models import Order, Recipient
 from app.seed_users import (
-    DemoAccount, load_accounts, provision_demo_users, verify_auth_origin,
+    DemoAccount, load_accounts, local_password_environment,
+    provision_demo_users, verify_auth_origin,
 )
 
 
@@ -169,3 +170,36 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
     env["DEMO_OWNER_EMAIL"]="gamma@example.test"
     with pytest.raises(ValueError, match="unique"):
         load_accounts(target="staging", environ=env)
+
+def test_local_seeding_prompts_only_for_missing_passwords():
+    secret = "a-local-secret-at-least-sixteen"
+    inputs = iter([secret, secret, secret + "-admin", secret + "-admin"])
+    requested = []
+    def prompt(message):
+        requested.append(message)
+        return next(inputs)
+
+    configured = local_password_environment(
+        {"DEMO_CUSTOMER_PASSWORD": "existing-customer-password-16+"},
+        interactive=True,
+        prompt=prompt,
+    )
+    assert configured["DEMO_CUSTOMER_PASSWORD"] == "existing-customer-password-16+"
+    assert configured["DEMO_ADMIN_PASSWORD"] == secret
+    assert configured["DEMO_OWNER_PASSWORD"] == secret + "-admin"
+    assert len(requested) == 4
+    assert len(load_accounts(target="local", environ=configured)) == 3
+
+
+def test_noninteractive_local_requires_passwords_without_prompting():
+    with pytest.raises(ValueError, match="DEMO_ADMIN_PASSWORD"):
+        local_password_environment(
+            {"DEMO_CUSTOMER_PASSWORD": "existing-customer-password-16+"},
+            interactive=False,
+        )
+
+
+def test_local_password_confirmation_must_match():
+    responses = iter(["first-password-16-characters", "different-password-16-characters"])
+    with pytest.raises(ValueError, match="did not match"):
+        local_password_environment({}, interactive=True, prompt=lambda _: next(responses))

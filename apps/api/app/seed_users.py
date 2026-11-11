@@ -8,7 +8,9 @@ This script is never called by the web service or by a deployment hook.
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
+import sys
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -60,6 +62,33 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
     if len({entry.password for entry in accounts}) != len(accounts):
         raise ValueError("Each demo account must have a different password")
     return accounts
+
+
+def local_password_environment(
+    environ: dict[str, str], *, interactive: bool, prompt=getpass.getpass,
+) -> dict[str, str]:
+    """Prompt for missing local secrets, never generating/hardcoding credentials.
+
+    Shell-provided DEMO_*_PASSWORD values work in CI; interactive developer
+    use needs only one 'pnpm db:seed' command.
+    """
+    values = dict(environ)
+    missing = [suffix for suffix, _, _, _ in ACCOUNT_SPECS
+               if not values.get(f"DEMO_{suffix}_PASSWORD")]
+    if missing and not interactive:
+        raise ValueError(
+            "Missing demo passwords in non-interactive mode: set "
+            + ", ".join(f"DEMO_{suffix}_PASSWORD" for suffix in missing)
+        )
+    for suffix in missing:
+        password = prompt(f"Password for {suffix.lower()} demo (16+ characters): ")
+        if len(password) < 16 or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 16–128 characters")
+        confirm = prompt(f"Repeat {suffix.lower()} demo password: ")
+        if password != confirm:
+            raise ValueError(f"Passwords did not match for {suffix.lower()} demo")
+        values[f"DEMO_{suffix}_PASSWORD"] = password
+    return values
 
 
 def verify_auth_origin(*, target: str, auth_url: str, expected_auth_host: str | None) -> str:
@@ -220,7 +249,6 @@ def main() -> None:
             "--expected-db-name, and --expected-auth-host"
         )
     try:
-        accounts = load_accounts(target=args.target, environ=os.environ)
         with SessionLocal() as db:
             # Local interactive provisioning must share Better Auth's PostgreSQL.
             # SQLite is supported only by the isolated unit-test fixture.
@@ -234,6 +262,13 @@ def main() -> None:
                 target=args.target, auth_url=get_settings().better_auth_url,
                 expected_auth_host=args.expected_auth_host,
             )
+            # Local-only interactive setup; staging always requires explicitly
+            # supplied secrets and never prompts for privileged accounts.
+            account_env = (
+                local_password_environment(os.environ, interactive=sys.stdin.isatty())
+                if args.target == "local" else os.environ
+            )
+            accounts = load_accounts(target=args.target, environ=account_env)
             with httpx.Client(timeout=15.0, follow_redirects=False) as client:
                 provisioned = provision_demo_users(
                     db, client=client, accounts=accounts, target=args.target,
