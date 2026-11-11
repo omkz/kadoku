@@ -44,11 +44,23 @@ def _run(*args: str, cwd: Path = API_DIR, env: dict[str, str] | None = None) -> 
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
+def _check_web_database() -> None:
+    settings = get_settings()
+    url = make_url(settings.database_url)
+    env = {
+        **os.environ,
+        "KADOKU_EXPECTED_DB_NAME": url.database or "",
+        "KADOKU_EXPECTED_DB_PORT": str(url.port or 5432),
+    }
+    _run("node", "--env-file=.env", "scripts/seed-admin.mjs", "--check", cwd=WEB_DIR, env=env)
+
+
 def reset() -> None:
     """Drop local Kadoku public schema and restore both app and auth tables."""
     name = _local_database_name()
     if not (WEB_DIR / ".env").is_file():
         raise RuntimeError("Create apps/web/.env before resetting (Better Auth needs it).")
+    _check_web_database()
     print(f"Resetting LOCAL development database {name!r} (all data will be lost).", flush=True)
     # No postgres superuser/CREATEDB permission necessary; Kadoku owns its DB.
     engine.dispose()
@@ -70,7 +82,7 @@ def seed_all() -> None:
         added = seed(db)
         fixtures = seed_demo_scenarios(db)
     print(f"Products added: {added}; demo fixtures: {fixtures}", flush=True)
-    env = {**os.environ, "KADOKU_EXPECTED_DB_NAME": name}
+    env = {**os.environ, "KADOKU_EXPECTED_DB_NAME": name,\n           "KADOKU_EXPECTED_DB_PORT": str(make_url(get_settings().database_url).port or 5432)}
     _run("node", "--env-file=.env", "scripts/seed-admin.mjs", cwd=WEB_DIR, env=env)
     print("Local development seed complete.", flush=True)
 
