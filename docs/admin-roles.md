@@ -64,3 +64,11 @@ super admin. Team changes are logged in the API logs.
 - A demoted/banned account loses admin API privileges immediately even
   when holding an otherwise valid JWT.
 - Never run demo scenario seeds on production databases.
+
+## Sample data for login/RBAC testing
+
+After sign-up, you can populate local My Orders, My People, and analytics
+with fictional fixtures. See [sample data](sample-data.md). The seeder
+intentionally does **not** create Better Auth users or grant administrator
+rights. Register the test account first; use `bootstrap_super_admin` only
+for the initial trusted administrator.

@@ -6,6 +6,7 @@ from pydantic import Field, field_validator
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     environment: str = "development"
+    staging_demo_seed_enabled: bool = False  # one-off operator process only; never configure on web service
     database_url: str = "sqlite:///./kadoku-dev.db"  # local-only fallback
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"

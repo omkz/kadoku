@@ -1,14 +1,15 @@
-"""Explicit, local-only demo scenarios for Orders, Analytics, and optional My People.
+"""Explicit demo scenarios for Orders, Analytics, and optional My People.
 
-This creates *synthetic* orders, not real PayPal Sandbox captures. Never run
-against a production or remotely hosted database. The existing catalog seed
-is separate and must be run first.
+Creates *synthetic* orders, not PayPal Sandbox captures. Local development is
+the default; a dedicated staging opt-in requires independent guardrails.
+Never use with a production/payment-live database.
 """
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid5
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -54,21 +55,59 @@ def _id(name: str) -> str:
     return str(uuid5(NAMESPACE_URL, "kadoku/dev-fixtures/v1/" + name))
 
 
-def _ensure_local_dev_database(db: Session) -> None:
+def _ensure_demo_target(
+    db: Session,
+    *,
+    target: Literal["local", "staging"] = "local",
+    expected_db_host: str | None = None,
+    expected_db_name: str | None = None,
+) -> None:
+    """Do not trust a command-line switch alone to authorize remote writes.
+
+    Every caller, including programmatic callers, goes through these checks.
+    Staging requires both opt-in environment variables and an exact database
+    host/name match. These are trusted-operator CLI helpers, never HTTP routes.
+    """
     settings = get_settings()
-    if settings.environment not in ("development", "test") or settings.paypal_mode != "sandbox":
-        raise RuntimeError(
-            "Demo scenario seed is restricted to development/test with PAYPAL_MODE=sandbox"
-        )
+    if settings.paypal_mode != "sandbox":
+        raise RuntimeError("Demo scenario seed requires PAYPAL_MODE=sandbox")
     url = db.get_bind().url
-    # Even a mistakenly configured ENVIRONMENT=development must not write to
-    # hosted/production databases. Unix-socket PostgreSQL is local (host None).
-    if url.host not in (None, "", "localhost", "127.0.0.1", "::1"):
-        raise RuntimeError("Demo scenario seed requires a local database")
+    host = (url.host or "").lower()
+    local_hosts = ("", "localhost", "127.0.0.1", "::1")
+
+    if target == "local":
+        if settings.environment not in ("development", "test"):
+            raise RuntimeError("Demo scenario seed is restricted to development/test locally")
+        if host not in local_hosts:
+            raise RuntimeError("Demo scenario seed requires a local database")
+        return
+
+    if target != "staging":
+        raise RuntimeError("Unknown demo seed target")
+    if settings.environment != "staging":
+        raise RuntimeError("Staging seed requires ENVIRONMENT=staging")
+    if not settings.staging_demo_seed_enabled:
+        raise RuntimeError("Staging seed requires STAGING_DEMO_SEED_ENABLED=true")
+    if not url.drivername.startswith("postgresql"):
+        raise RuntimeError("Staging seed requires PostgreSQL")
+    if host in local_hosts:
+        raise RuntimeError("Staging seed requires an explicitly identified remote database")
+    if not expected_db_host or host != expected_db_host.strip().lower():
+        raise RuntimeError("Staging database host does not match --expected-db-host")
+    if not expected_db_name or url.database != expected_db_name.strip():
+        raise RuntimeError("Staging database name does not match --expected-db-name")
+
+
+def _ensure_local_dev_database(db: Session) -> None:
+    """Preserve the original development-only safety contract."""
+    _ensure_demo_target(db, target="local")
 
 
 def seed_demo_scenarios(
     db: Session, *, user_id: str | None = None, now: datetime | None = None,
+    target: Literal["local", "staging"] = "local",
+    expected_db_host: str | None = None, expected_db_name: str | None = None,
+    commit: bool = True,
 ) -> dict[str, int]:
     """Insert only missing deterministic fixtures; never update existing rows.
 
@@ -77,7 +116,10 @@ def seed_demo_scenarios(
     and adds example people/moments for the account. Different scopes are
     separate datasets, so do not mix them on the same development database.
     """
-    _ensure_local_dev_database(db)
+    _ensure_demo_target(
+        db, target=target, expected_db_host=expected_db_host,
+        expected_db_name=expected_db_name,
+    )
     if user_id is not None and (not user_id.strip() or len(user_id) > 128):
         raise ValueError("user_id must be a non-empty Better Auth subject (max 128 chars)")
     now = now or datetime.now(timezone.utc)
@@ -157,7 +199,8 @@ def seed_demo_scenarios(
                 ))
                 created["occasions"] += 1
 
-    db.commit()
+    if commit:
+        db.commit()
     return created
 
 
