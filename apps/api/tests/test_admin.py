@@ -1,5 +1,5 @@
 """Admin security and real catalog/order operations over the test database."""
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Order, Product
 
@@ -139,6 +139,13 @@ def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
     client, database, token_factory, monkeypatch, set_auth_role):
     set_auth_role("test-user-a", "admin")
     with database() as db:
+        db.execute(text(
+            'INSERT INTO "user" (id, name, email, role, banned) '
+            'VALUES (:id, :name, :email, :role, :banned)'
+        ), {
+            "id": "customer-11111111", "name": "Nadia",
+            "email": "nadia@example.test", "role": "user", "banned": False,
+        })
         product = db.scalar(select(Product).limit(1))
         db.add_all([
             Order(
@@ -173,12 +180,22 @@ def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
     buyers = result.json()["items"] + next_page.json()["items"]
     assert {b["buyer_ref"] for b in buyers} == {"…11111111", "…22222222"}
     first = next(b for b in buyers if b["buyer_ref"] == "…11111111")
+    assert first["name"] == "Nadia"
+    assert first["email"] == "nadia@example.test"
     assert first["orders_total"] == 2
     assert first["paid_orders"] == 1
     assert first["sandbox_paid_minor"] == 2500
-    assert "email" not in first
-    assert "shipping_address" not in first
-    assert "user_id" not in first
+    # Preserve the order summary for a buyer whose Better Auth account
+    # has since been removed; do not guess a name or leak private data.
+    missing = next(b for b in buyers if b["buyer_ref"] == "…22222222")
+    assert missing["name"] is None
+    assert missing["email"] is None
+    assert missing["orders_total"] == 1
+    for buyer in buyers:
+        assert "shipping_address" not in buyer
+        assert "paypal_order_id" not in buyer
+        assert "user_id" not in buyer
+        assert "password" not in buyer
     assert client.get("/api/v1/admin/customers?page_size=101", headers=headers).status_code == 422
 
 
