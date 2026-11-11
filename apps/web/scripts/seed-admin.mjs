@@ -32,6 +32,17 @@ const password = process.env.DEV_ADMIN_PASSWORD || "";
 if (!email || !email.includes("@") || password.length < 8) {
   throw new Error("Set DEV_ADMIN_EMAIL and DEV_ADMIN_PASSWORD (at least 8 characters) in apps/web/.env");
 }
+
+// Buyers are separate accounts. Alex/Morgan/Taylor/Casey/Jordan are
+// recipient profiles (My People), never customer identities.
+const customers = [
+  { name: "Nadia", email: "nadia@kadoku.test" },
+  { name: "Rina", email: "rina@kadoku.test" },
+  { name: "Dimas", email: "dimas@kadoku.test" },
+  { name: "Farah", email: "farah@kadoku.test" },
+  { name: "Bima", email: "bima@kadoku.test" },
+];
+
 const pool = new pg.Pool({ connectionString: urlString });
 const auth = betterAuth({
   database: pool,
@@ -40,23 +51,44 @@ const auth = betterAuth({
   emailAndPassword: { enabled: true, minPasswordLength: 8 },
 });
 
-try {
-  const existing = await pool.query('SELECT id, role FROM "user" WHERE lower(email) = $1', [email]);
-  let userId;
-  if (existing.rowCount) {
-    userId = existing.rows[0].id;
-    console.log("Existing development admin found; password left unchanged (reset the local database to recreate it).");
+async function ensureAccount(accountEmail, name, role) {
+  const found = await pool.query(
+    'SELECT id, role FROM "user" WHERE lower(email) = $1',
+    [accountEmail],
+  );
+  let id;
+  if (found.rowCount) {
+    id = found.rows[0].id;
+    if (role === "user" && found.rows[0].role && found.rows[0].role !== "user") {
+      throw new Error("A seeded customer email already belongs to a privileged account");
+    }
   } else {
     const created = await auth.api.signUpEmail({
-      body: { email, password, name: "Kadoku Dev Admin" },
+      body: { email: accountEmail, password, name },
     });
-    userId = created.user.id;
-    console.log("Development admin created.");
-    console.log(`Email: ${email}`);
+    id = created.user.id;
   }
-  await pool.query('UPDATE "user" SET role = $1 WHERE id = $2', ["admin", userId]);
-  console.log(`Admin access ready: ${email}`);
-  console.log(`SEED_ADMIN_USER_ID=${userId}`);
+  if (role === "admin") {
+    await pool.query('UPDATE "user" SET role = $1 WHERE id = $2', ["admin", id]);
+  } else {
+    await pool.query('UPDATE "user" SET role = $1 WHERE id = $2', ["user", id]);
+  }
+  return id;
+}
+
+try {
+  const adminId = await ensureAccount(email, "Kadoku Admin", "admin");
+  console.log(`Admin ready: ${email}`);
+  console.log(`SEED_ADMIN_USER_ID=${adminId}`);
+  for (const customer of customers) {
+    if (customer.email === email) {
+      throw new Error("DEV_ADMIN_EMAIL must not match a seeded customer email");
+    }
+    const customerId = await ensureAccount(customer.email, customer.name, "user");
+    console.log(`Customer ready: ${customer.name} (${customer.email})`);
+    console.log(`SEED_CUSTOMER_USER_ID=${customerId}`);
+  }
+  console.log("Customer passwords use DEV_ADMIN_PASSWORD (local development only).");
 } finally {
   await pool.end();
 }
