@@ -3,7 +3,7 @@ services:
   - type: web
     name: kadoku-api
     runtime: python
-    plan: free
+    plan: 0.5c-512mb
     region: singapore
     rootDir: apps/api
     buildCommand: uv sync --frozen
