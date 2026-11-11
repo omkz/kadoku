@@ -96,6 +96,42 @@ uv run python -m app.seed_sample \
   --email "your-test-account@example.test" --confirm-demo-data
 ```
 
+## Reset localhost database (destructive)
+
+From the repository root, run:
+
+```sh
+pnpm db:reset
+```
+
+**This permanently deletes all local Kadoku data**, including users, sessions,
+orders, and any local catalog changes. Confirm by typing the exact database name.
+
+The command validates local PostgreSQL settings shared by FastAPI and Better
+Auth, checks for unrelated tables/schemas, drops/recreates the `public`
+schema, runs Alembic and Better Auth migrations, temporarily starts a local
+Next.js server, runs the existing demo user/business seeder, then stops
+that temporary web server.
+
+Before resetting:
+- Stop local Next.js and FastAPI (ports 3000 and 8000).
+- Install dependencies with `pnpm install` and `cd apps/api && uv sync`.
+- Set local `AUTH_DATABASE_URL` in `apps/web/.env.local` and `DATABASE_URL`
+  in `apps/api/.env` to the same dedicated localhost PostgreSQL database.
+- Use `ENVIRONMENT=development`, `PAYPAL_MODE=sandbox`, and
+  `BETTER_AUTH_URL=http://localhost:3000` for FastAPI.
+- The database role must have permission to recreate the public schema.
+
+Demo account passwords are securely prompted if missing or can be set in
+`DEMO_CUSTOMER_PASSWORD`, `DEMO_ADMIN_PASSWORD`, and
+`DEMO_OWNER_PASSWORD`. For non-interactive use, supply all three passwords
+as environment variables and pass `--confirm-db DB_NAME` through the npm
+script: `pnpm db:reset --confirm-db DB_NAME`.
+
+This command **cannot run against remote PostgreSQL, staging, production,
+system databases, or a schema with unfamiliar objects**. It is never
+run automatically during server startup.
+
 ## Render staging (later; don't run on live production)
 
 Only run once you've intentionally designated this deployment/database as
