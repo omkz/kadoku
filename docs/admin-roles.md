@@ -76,6 +76,6 @@ for the initial trusted administrator.
 ## Automated demo accounts
 
 For isolated local/staging test accounts (customer, admin, super admin) use the
-operator-only \`app.seed_users\` flow in [sample-data.md](sample-data.md).
+operator-only `app.seed_users` flow in [sample-data.md](sample-data.md).
 This is strictly separate from the normal initial administrator bootstrap
 for a real account.
