@@ -12,8 +12,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.16
+      # Kadoku's current Render installation is a test-only staging environment.
+      # Production must use separate services, DB and credentials later.
       - key: ENVIRONMENT
-        value: production
+        value: staging
       - key: DATABASE_URL
         fromDatabase:
           name: kadoku-db
