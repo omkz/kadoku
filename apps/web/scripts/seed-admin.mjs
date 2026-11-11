@@ -1,6 +1,5 @@
 // Seed a local Better Auth administrator through Better Auth's password hasher.
 // Invoked by: cd apps/api && uv run python -m app.db seed
-import { randomBytes } from "node:crypto";
 import { betterAuth } from "better-auth";
 import pg from "pg";
 
@@ -28,7 +27,11 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 
-const email = "admin@kadoku.local";
+const email = (process.env.DEV_ADMIN_EMAIL || "").trim().toLowerCase();
+const password = process.env.DEV_ADMIN_PASSWORD || "";
+if (!email || !email.includes("@") || password.length < 8) {
+  throw new Error("Set DEV_ADMIN_EMAIL and DEV_ADMIN_PASSWORD (at least 8 characters) in apps/web/.env");
+}
 const pool = new pg.Pool({ connectionString: urlString });
 const auth = betterAuth({
   database: pool,
@@ -42,16 +45,14 @@ try {
   let userId;
   if (existing.rowCount) {
     userId = existing.rows[0].id;
-    console.log("Existing development admin found; password left unchanged.");
+    console.log("Existing development admin found; password left unchanged (reset the local database to recreate it).");
   } else {
-    const password = randomBytes(20).toString("base64url");
     const created = await auth.api.signUpEmail({
       body: { email, password, name: "Kadoku Dev Admin" },
     });
     userId = created.user.id;
     console.log("Development admin created.");
     console.log(`Email: ${email}`);
-    console.log(`Password (save now): ${password}`);
   }
   await pool.query('UPDATE "user" SET role = $1 WHERE id = $2', ["admin", userId]);
   console.log(`Admin access ready: ${email}`);
