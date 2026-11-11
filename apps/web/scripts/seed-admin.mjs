@@ -33,15 +33,8 @@ if (!email || !email.includes("@") || password.length < 8) {
   throw new Error("Set DEV_ADMIN_EMAIL and DEV_ADMIN_PASSWORD (at least 8 characters) in apps/web/.env");
 }
 
-// Buyers are separate accounts. Alex/Morgan/Taylor/Casey/Jordan are
-// recipient profiles (My People), never customer identities.
-const customers = [
-  { name: "Nadia", email: "nadia@kadoku.test" },
-  { name: "Rina", email: "rina@kadoku.test" },
-  { name: "Dimas", email: "dimas@kadoku.test" },
-  { name: "Farah", email: "farah@kadoku.test" },
-  { name: "Bima", email: "bima@kadoku.test" },
-];
+// One customer account; My People (including Mom) belongs to this customer.
+const customer = { name: "Nadia", email: "nadia@kadoku.test" };
 
 const pool = new pg.Pool({ connectionString: urlString });
 const auth = betterAuth({
@@ -80,15 +73,13 @@ try {
   const adminId = await ensureAccount(email, "Kadoku Admin", "admin");
   console.log(`Admin ready: ${email}`);
   console.log(`SEED_ADMIN_USER_ID=${adminId}`);
-  for (const customer of customers) {
-    if (customer.email === email) {
-      throw new Error("DEV_ADMIN_EMAIL must not match a seeded customer email");
-    }
-    const customerId = await ensureAccount(customer.email, customer.name, "user");
-    console.log(`Customer ready: ${customer.name} (${customer.email})`);
-    console.log(`SEED_CUSTOMER_USER_ID=${customerId}`);
+  if (customer.email === email) {
+    throw new Error("DEV_ADMIN_EMAIL must differ from the customer email");
   }
-  console.log("Customer passwords use DEV_ADMIN_PASSWORD (local development only).");
+  const customerId = await ensureAccount(customer.email, customer.name, "user");
+  console.log(`Customer ready: ${customer.name} (${customer.email})`);
+  console.log(`SEED_CUSTOMER_USER_ID=${customerId}`);
+  console.log("Customer password uses DEV_ADMIN_PASSWORD (local development only).");
 } finally {
   await pool.end();
 }
