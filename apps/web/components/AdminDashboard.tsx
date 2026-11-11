@@ -63,6 +63,8 @@ const nextFulfillment: Record<string,string> = {
 };
 type AdminCustomer = {
   buyer_ref: string;
+  name: string | null;
+  email: string | null;
   orders_total: number;
   paid_orders: number;
   sandbox_paid_minor: number;
@@ -567,9 +569,10 @@ export default function AdminDashboard() {
           {customersError && <p className="admin-error" role="alert">{customersError}</p>}
           {customersBusy && <p className="admin-loading" role="status">Loading buyer activity…</p>}
           {customers && <><div className="admin-table-scroll"><table className="admin-table">
-            <thead><tr><th>Buyer ref</th><th>Orders</th><th>Paid</th><th>Sandbox captured</th><th>Last order</th></tr></thead>
+            <thead><tr><th>Customer</th><th>Email</th><th>Orders</th><th>Paid</th><th>Total spent (Sandbox)</th><th>Last order</th></tr></thead>
             <tbody>{customers.items.map(buyer=><tr key={buyer.buyer_ref}>
-              <td className="admin-mono">{buyer.buyer_ref}</td>
+              <td>{buyer.name ?? "Account unavailable"}</td>
+              <td>{buyer.email ?? "—"}</td>
               <td>{buyer.orders_total}</td><td>{buyer.paid_orders}</td>
               <td className="admin-no-wrap">{dollars(buyer.sandbox_paid_minor)}</td>
               <td className="admin-no-wrap">{dateLabel(buyer.latest_order_at)}</td>
@@ -581,7 +584,7 @@ export default function AdminDashboard() {
             <button type="button" className="admin-outline" disabled={customersPage*pageSize>=customers.total||customersBusy} onClick={()=>setCustomersPage(p=>p+1)}>Next</button>
           </div></div></>}
         </div>
-        <p className="admin-disclaimer">Guest checkout records cannot be reliably assigned to an individual customer. This view deliberately omits emails, addresses and PayPal identifiers.</p>
+        <p className="admin-disclaimer">Names and emails are visible to authorized admins only. Guest checkouts are excluded; shipping details, payment identifiers and account credentials are never shown. Sandbox totals are test payments, not revenue.</p>
       </>}
       {section==="settings" && <>
         <div className="admin-section-heading"><div><p className="admin-overline">STORE CONFIGURATION</p><h1>Settings</h1><p>Environment, access control and catalog policy.</p></div></div>
