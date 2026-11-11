@@ -3,7 +3,9 @@
 Kadoku already has 100 illustrative `demo_only` products and a local-only
 scenario generator. The new explicit `app.seed_sample` command provides the
 **same synthetic dataset in either environment**, but does **not** create
-credentials, alter roles, or contact PayPal.
+credentials, alter roles, or contact PayPal. The separate operator-only
+`app.seed_users` command provisions three Better Auth demo accounts and
+explicitly grants their test roles.
 
 | Dataset | Count | Visibility |
 | --- | ---: | --- |
@@ -21,45 +23,66 @@ command inserts **zero** rows once seeded, does not update existing sample
 orders, and never resets existing customer data. Do not use the orders as
 evidence of sales. Fixture dates are fixed when first inserted.
 
+## Automated demo user provisioning
+
+A dedicated operator-only \`app.seed_users\` command makes three working
+Better Auth identities. Passwords are passed **only via environment variables**
+and are hashed by Better Auth itself; the script never writes hashes,
+\`account\`, or \`session\` records.
+
+| Default local email | Role | Purpose |
+| --- | --- | --- |
+| \`customer@demo.test\` | \`user\` | My People, My Orders, checkout |
+| \`admin@demo.test\` | \`admin\` | Products, orders, analytics |
+| \`owner@demo.test\` | \`super_admin\` | Team and role changes |
+
+The script creates missing users using Better Auth's public signup API and
+verifies existing demo users with a normal Better Auth password login before
+reusing them. It **never adopts** an unrelated account with a colliding
+email, resets its password, or overwrites a non-demo role. Reruns don't
+duplicate user records, fixture orders or recipients. On first run, it also
+seeds demo-only products and synthetic business data for the customer
+account unless \`--skip-business-data\` is specified.
+
 ## Localhost
 
-1. Make sure Next.js `apps/web/.env.local` `AUTH_DATABASE_URL` and FastAPI
-   `apps/api/.env` `DATABASE_URL` point to the **same local database**.
-   Better Auth needs PostgreSQL; set up/migrate both application schema
-   (Alembic) and Better Auth schema (including the Admin plugin).
-2. Start both apps. Sign up **once** at `http://localhost:3000` with an
-   account reserved for testing. No default login/password is stored in Git.
-3. From `apps/api`, populate the 100 demo catalog products if missing:
+1. Ensure \`apps/web/.env.local\` \`AUTH_DATABASE_URL\` and
+   \`apps/api/.env\` \`DATABASE_URL\` reference the **same local PostgreSQL**.
+   Apply Alembic and Better Auth migrations, including the Admin plugin.
+2. Start Next.js on \`http://localhost:3000\` so Better Auth signup works.
+3. From \`apps/api\`, set three **different**, at-least-16-character
+   development-only passwords through your shell (do not commit them):
 
-   ```sh
-   uv run python -m app.seed
-   ```
+   \`\`\`sh
+   export DEMO_CUSTOMER_PASSWORD='choose-one-strong-demo-password'
+   export DEMO_ADMIN_PASSWORD='choose-a-second-strong-demo-password'
+   export DEMO_OWNER_PASSWORD='choose-a-third-strong-demo-password'
+   uv run python -m app.seed_users --confirm-demo-users
+   \`\`\`
 
-4. Then seed account scenarios and analytics:
+   The above values are placeholders; choose your own private passwords.
+   The command provisions the three identities and their sample catalog,
+   analytics and customer fixtures. It does **not** touch PayPal.
 
-   ```sh
-   uv run python -m app.seed_sample \
-     --email "your-test-account@example.test" \
-     --confirm-demo-data
-   ```
+4. Sign in as \`owner@demo.test\` and open \`/admin\` → Team; then sign in
+   as \`admin@demo.test\` and \`customer@demo.test\` to compare permissions.
 
-5. If testing RBAC PR #29, **separately** bootstrap your own registered
-   super admin (this script does not promote anyone):
+You can optionally override the three local emails with
+\`DEMO_CUSTOMER_EMAIL\`, \`DEMO_ADMIN_EMAIL\`, and \`DEMO_OWNER_EMAIL\`.
 
-   ```sh
-   uv run python -m app.bootstrap_super_admin \
-     --email "your-test-account@example.test" --confirm
-   ```
+To seed *additional* already-registered accounts without creating them:
 
-6. Sign out/in and inspect `/admin`, My Orders and My People.
-   Create a **second account** to verify its data is isolated; its My Orders
-   and My People should initially be empty.
+\`\`\`sh
+uv run python -m app.seed_sample \
+  --email "your-other-test-account@example.test" --confirm-demo-data
+\`\`\`
 
 ## Render staging (later; don't run on live production)
 
 Only run once you've intentionally designated this deployment/database as
-**staging**, migrated Better Auth's Admin plugin schema and registered a
-separate staging test account via the Kadoku website.
+**staging** and migrated Better Auth's Admin plugin schema. The user seeder
+can create separate staging identities through Better Auth when explicitly
+requested.
 
 The paid `kadoku-api` Render service supports SSH or Dashboard Shell;
 the Free web service does not. Run from the API service's **trusted shell**,
@@ -71,7 +94,36 @@ Check host and database name without printing credentials:
 uv run python -c "from app.core.config import get_settings; from sqlalchemy.engine import make_url; u=make_url(get_settings().database_url); print('host:', u.host, 'database:', u.database)"
 ```
 
-Then *only if that connection is really staging* run:
+To create three *staging-only* demo identities through Better Auth, choose
+three unique passwords and three email addresses that are not real customer
+accounts. From the trusted API shell, set:
+
+```sh
+export DEMO_CUSTOMER_EMAIL='customer-staging@example.test'
+export DEMO_ADMIN_EMAIL='admin-staging@example.test'
+export DEMO_OWNER_EMAIL='owner-staging@example.test'
+export DEMO_CUSTOMER_PASSWORD='choose-one-strong-staging-password'
+export DEMO_ADMIN_PASSWORD='choose-a-second-strong-staging-password'
+export DEMO_OWNER_PASSWORD='choose-a-third-strong-staging-password'
+```
+
+Then, *only if that connection is really staging* and `BETTER_AUTH_URL` points
+to the staging web service (not production), run:
+
+```sh
+ENVIRONMENT=staging STAGING_DEMO_SEED_ENABLED=true \
+uv run python -m app.seed_users \
+  --target staging \
+  --expected-db-host 'ACTUAL_STAGING_DB_HOST' \
+  --expected-db-name 'kadoku' \
+  --expected-auth-host 'kadoku-web.onrender.com' \
+  --confirm-demo-users --confirm-staging
+```
+
+This is the complete automatic user + business fixture setup. The old
+`seed_sample` CLI remains available for an *additional* existing account.
+
+To populate only an already-registered staging user, run:
 
 ```sh
 ENVIRONMENT=staging STAGING_DEMO_SEED_ENABLED=true \
@@ -96,7 +148,7 @@ Mandatory safety checks:
 - Remote PostgreSQL host and database **must match** the operator-supplied
   expected values; local mode always rejects a remote host.
 - Manual `--confirm-demo-data` and `--confirm-staging` flags.
-- Account must already exist in Better Auth in that exact database.
+- `seed_users` creates identities via Better Auth; `seed_sample` instead requires an account that already exists.
 - No destructive updates, no user creation/passwords/role grants, no network
   PayPal requests, and no API endpoint that can trigger seeding.
 
