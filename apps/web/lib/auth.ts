@@ -17,5 +17,5 @@ export const auth = betterAuth({
       requireEmailVerification: true,
     },
   } : {},
-  plugins: [admin({ac, roles, defaultRole:"user", adminRoles:["admin","super_admin"]}), jwt({jwks: {keyPairConfig: {alg: "EdDSA", crv: "Ed25519"}}})],
+  plugins: [admin({ac, roles, defaultRole:"user"}), jwt({jwks: {keyPairConfig: {alg: "EdDSA", crv: "Ed25519"}}})],
 });
