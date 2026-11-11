@@ -25,16 +25,16 @@ evidence of sales. Fixture dates are fixed when first inserted.
 
 ## Automated demo user provisioning
 
-A dedicated operator-only \`app.seed_users\` command makes three working
+A dedicated operator-only `app.seed_users` command makes three working
 Better Auth identities. Passwords are passed **only via environment variables**
 and are hashed by Better Auth itself; the script never writes hashes,
-\`account\`, or \`session\` records.
+`account`, or `session` records.
 
 | Default local email | Role | Purpose |
 | --- | --- | --- |
-| \`customer@demo.test\` | \`user\` | My People, My Orders, checkout |
-| \`admin@demo.test\` | \`admin\` | Products, orders, analytics |
-| \`owner@demo.test\` | \`super_admin\` | Team and role changes |
+| `customer@demo.test` | `user` | My People, My Orders, checkout |
+| `admin@demo.test` | `admin` | Products, orders, analytics |
+| `owner@demo.test` | `super_admin` | Team and role changes |
 
 The script creates missing users using Better Auth's public signup API and
 verifies existing demo users with a normal Better Auth password login before
@@ -42,40 +42,43 @@ reusing them. It **never adopts** an unrelated account with a colliding
 email, resets its password, or overwrites a non-demo role. Reruns don't
 duplicate user records, fixture orders or recipients. On first run, it also
 seeds demo-only products and synthetic business data for the customer
-account unless \`--skip-business-data\` is specified.
+account unless `--skip-business-data` is specified.
 
 ## Localhost
 
-1. Ensure \`apps/web/.env.local\` \`AUTH_DATABASE_URL\` and
-   \`apps/api/.env\` \`DATABASE_URL\` reference the **same local PostgreSQL**.
+1. Ensure `apps/web/.env.local` `AUTH_DATABASE_URL` and
+   `apps/api/.env` `DATABASE_URL` reference the **same local PostgreSQL**.
    Apply Alembic and Better Auth migrations, including the Admin plugin.
-2. Start Next.js on \`http://localhost:3000\` so Better Auth signup works.
-3. From \`apps/api\`, set three **different**, at-least-16-character
+2. Start Next.js on `http://localhost:3000` so Better Auth signup works.
+3. From `apps/api`, set three **different**, at-least-16-character
    development-only passwords through your shell (do not commit them):
 
-   \`\`\`sh
+   ```sh
    export DEMO_CUSTOMER_PASSWORD='choose-one-strong-demo-password'
    export DEMO_ADMIN_PASSWORD='choose-a-second-strong-demo-password'
    export DEMO_OWNER_PASSWORD='choose-a-third-strong-demo-password'
    uv run python -m app.seed_users --confirm-demo-users
-   \`\`\`
+   ```
+
+   From the repository root, the equivalent is `pnpm seed:users`
+   (or `npm run seed:users`).
 
    The above values are placeholders; choose your own private passwords.
    The command provisions the three identities and their sample catalog,
    analytics and customer fixtures. It does **not** touch PayPal.
 
-4. Sign in as \`owner@demo.test\` and open \`/admin\` → Team; then sign in
-   as \`admin@demo.test\` and \`customer@demo.test\` to compare permissions.
+4. Sign in as `owner@demo.test` and open `/admin` → Team; then sign in
+   as `admin@demo.test` and `customer@demo.test` to compare permissions.
 
 You can optionally override the three local emails with
-\`DEMO_CUSTOMER_EMAIL\`, \`DEMO_ADMIN_EMAIL\`, and \`DEMO_OWNER_EMAIL\`.
+`DEMO_CUSTOMER_EMAIL`, `DEMO_ADMIN_EMAIL`, and `DEMO_OWNER_EMAIL`.
 
 To seed *additional* already-registered accounts without creating them:
 
-\`\`\`sh
+```sh
 uv run python -m app.seed_sample \
   --email "your-other-test-account@example.test" --confirm-demo-data
-\`\`\`
+```
 
 ## Render staging (later; don't run on live production)
 
