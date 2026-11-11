@@ -82,7 +82,8 @@ def seed_all() -> None:
         added = seed(db)
         fixtures = seed_demo_scenarios(db)
     print(f"Products added: {added}; demo fixtures: {fixtures}", flush=True)
-    env = {**os.environ, "KADOKU_EXPECTED_DB_NAME": name,\n           "KADOKU_EXPECTED_DB_PORT": str(make_url(get_settings().database_url).port or 5432)}
+    env = {**os.environ, "KADOKU_EXPECTED_DB_NAME": name,
+           "KADOKU_EXPECTED_DB_PORT": str(make_url(get_settings().database_url).port or 5432)}
     _run("node", "--env-file=.env", "scripts/seed-admin.mjs", cwd=WEB_DIR, env=env)
     print("Local development seed complete.", flush=True)
 
