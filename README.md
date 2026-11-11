@@ -301,6 +301,40 @@ The authenticated Studio Agent endpoint also logs just exception class chain, up
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
 
+### Rails-style local reset and seed (development only)
+
+On `feature/admin-role-rbac`, these commands replace the manual development
+database rebuild and make a local administrator automatically:
+
+```bash
+# First-time setup: configure apps/api/.env and apps/web/.env,
+# install backend dependencies (uv sync), frontend dependencies (pnpm install),
+# and create the local PostgreSQL database owned by kadoku.
+cd apps/api
+uv run python -m app.db reset
+uv run python -m app.db seed
+```
+
+- `reset` **deletes every table and record in the local Kadoku public schema**,
+  then runs Alembic and Better Auth migrations. It does NOT seed.
+- `seed` adds the 100 demo catalog entries, 38 fictional orders/analytics
+  fixtures and a local Better Auth administrator. It prints a generated
+  password **only on first account creation**: save it before closing the
+  terminal. The email is `admin@kadoku.local`.
+- Repeating `seed` does not overwrite an existing admin password, and its
+  product/order fixtures are idempotent. Log in at `/sign-in` using the
+  generated credentials, then visit `/admin`.
+- Both commands refuse non-local PostgreSQL, non-development/test environments,
+  live PayPal mode or databases not named `kadoku`/`kadoku_test`.
+  The frontend and backend environment files must refer to the same local DB.
+- Demo `paid` orders are fake, not PayPal captures. Never use this workflow
+  against real customer information or a shared database.
+- The commands require `pnpm` and Node 22 (with `--env-file`) installed.
+
+For a **non-destructive** catalog update without generating orders/admin, keep
+using `uv run python -m app.seed`. For a real existing account, use the
+normal Better Auth RBAC administration path rather than the demo seeder.
+
 ### Give an account admin access
 
 1. Start the backend and web app as above. Register or sign in through the normal Kadoku storefront first.
