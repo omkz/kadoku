@@ -69,7 +69,7 @@ def validate_local_reset(
 
     verify_auth_origin(target="local", auth_url=auth_url, expected_auth_host=None)
     parsed = urlsplit(auth_url)
-    if parsed.port not in (None, 3000):
+    if parsed.port != 3000:
         raise RuntimeError("db:reset requires local Better Auth on port 3000")
 
     return api.database
