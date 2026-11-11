@@ -186,7 +186,7 @@ def test_agent_not_enabled_when_model_key_is_missing(
     assert "Gemini API key is missing" in response.json()["detail"]
 
 
-def test_safe_provider_error_statuses_and_never_expose_key(, set_auth_role):
+def test_safe_provider_error_statuses_and_never_expose_key(set_auth_role):
     secret="sensitive-provider-key-value"
     class ProviderException(Exception):
         def __init__(self, status):
