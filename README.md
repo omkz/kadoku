@@ -318,12 +318,13 @@ uv run python -m app.db seed
 - `reset` **deletes every table and record in the local Kadoku public schema**,
   then runs Alembic and Better Auth migrations. It does NOT seed.
 - `seed` adds the 100 demo catalog entries, 38 fictional orders/analytics
-  fixtures and a local Better Auth administrator. It prints a generated
-  password **only on first account creation**: save it before closing the
-  terminal. The email is `admin@kadoku.local`.
+  fixtures and a local Better Auth administrator. Set `DEV_ADMIN_EMAIL` and
+  `DEV_ADMIN_PASSWORD` (minimum 8 characters) in `apps/web/.env` before seeding.
+  For example, `DEV_ADMIN_EMAIL=admin@kadoku.local`.
 - Repeating `seed` does not overwrite an existing admin password, and its
   product/order fixtures are idempotent. Log in at `/sign-in` using the
-  generated credentials, then visit `/admin`.
+  configured credentials, then visit `/admin`. To change an existing admin password,
+  reset the disposable local database and seed again.
 - Both commands refuse non-local PostgreSQL, non-development/test environments,
   live PayPal mode or databases not named `kadoku`/`kadoku_test`.
   The frontend and backend environment files must refer to the same local DB.
