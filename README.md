@@ -314,17 +314,19 @@ uv run python -m app.db seed
 
 - `reset` deletes the local Kadoku public schema and runs Alembic and
   Better Auth migrations. **All existing local data is lost.**
-- `seed` creates exactly **two Better Auth accounts** in a fresh database:
-  the admin (`DEV_ADMIN_EMAIL`, usually `admin@kadoku.local`) and one
-  customer, **Nadia** (`nadia@kadoku.test`).
-- Both local accounts use `DEV_ADMIN_PASSWORD` (8+ characters) from
-  `apps/web/.env` when first created. Better Auth stores a password hash.
-  Role-based access still distinguishes the admin from the customer.
-- The seed also inserts 100 catalog products and 38 fictional purchase
-  orders owned **only by Nadia**. Admin Customers displays one buyer.
-- Nadia's **My People** includes Mom, Alex, Morgan, Taylor, Casey and Jordan,
-  with five birthday records. Mom is a **recipient**, not another user.
-  The admin has no seeded recipients and no customer orders.
+- `seed` creates exactly **two Better Auth accounts** on a fresh database:
+  one admin, and one customer. Configure `DEV_ADMIN_EMAIL`,
+  `DEV_ADMIN_PASSWORD`, `DEV_CUSTOMER_NAME`, `DEV_CUSTOMER_EMAIL`
+  and `DEV_CUSTOMER_PASSWORD` in `apps/web/.env`. Passwords require
+  at least eight characters and the two emails must be different.
+- The seed also inserts 100 products and 38 fictional orders, owned
+  **only by the customer**, while Admin Customers shows one buyer.
+- The customer's **My People** includes Mom, Alex, Morgan, Taylor,
+  Casey, and Jordan, with five birthday records. Recipients are not
+  customer accounts; the admin has no seeded orders or recipients.
+- Better Auth hashes passwords. Re-running seed does not overwrite
+  existing account passwords. Reset the disposable local database to
+  recreate accounts with changed credentials.
 - Repeated `seed` calls do not create duplicate accounts or fixtures.
   Existing passwords are not overwritten. On a previously seeded database,
   older accounts and records are preserved; use `reset` once if you need
