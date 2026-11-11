@@ -32,11 +32,11 @@ def test_sample_uses_registered_account_and_is_idempotent(
         )
         assert first == {
             "analytics": {"orders": len(DAYS_AGO), "recipients": 0, "occasions": 0},
-            "account": {"orders": len(DAYS_AGO), "recipients": 5, "occasions": 4},
+            "account": {"orders": len(DAYS_AGO), "recipients": 6, "occasions": 5},
         }
         assert db.scalar(select(func.count(Order.id))) == len(DAYS_AGO) * 2
-        assert db.scalar(select(func.count(Recipient.id))) == 5
-        assert db.scalar(select(func.count(Occasion.id))) == 4
+        assert db.scalar(select(func.count(Recipient.id))) == 6
+        assert db.scalar(select(func.count(Occasion.id))) == 5
         assert db.scalar(select(func.count(Product.id))) == before_products
         assert db.scalar(select(text('role FROM "user" WHERE id = :id')).params(id="fixture-customer")) == "user"
         initial = {order.id: order.created_at for order in db.scalars(select(Order)).all()}
