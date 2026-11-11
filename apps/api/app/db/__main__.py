@@ -74,7 +74,7 @@ def reset() -> None:
 
 
 def seed_all() -> None:
-    """Idempotent demo catalog, scenarios and a proper Better Auth admin account."""
+    """Idempotent catalog, five buyers, admin recipients, and order scenarios."""
     name = _local_database_name()
     if not (WEB_DIR / ".env").is_file():
         raise RuntimeError("Create apps/web/.env before seeding (Better Auth needs it).")
@@ -94,12 +94,25 @@ def seed_all() -> None:
         for line in result.stdout.splitlines()
         if line.startswith("SEED_ADMIN_USER_ID=")
     ]
+    customer_ids = [
+        line.removeprefix("SEED_CUSTOMER_USER_ID=")
+        for line in result.stdout.splitlines()
+        if line.startswith("SEED_CUSTOMER_USER_ID=")
+    ]
     if len(admin_ids) != 1 or not admin_ids[0]:
         raise RuntimeError("Better Auth seed did not return an admin user ID")
-    print(result.stdout.replace(f"SEED_ADMIN_USER_ID={admin_ids[0]}\\n", ""), end="", flush=True)
+    if len(customer_ids) != 5 or any(not uid for uid in customer_ids) or len(set(customer_ids)) != 5:
+        raise RuntimeError("Better Auth seed did not return five distinct customer IDs")
+    public_lines = [
+        line for line in result.stdout.splitlines()
+        if not line.startswith(("SEED_ADMIN_USER_ID=", "SEED_CUSTOMER_USER_ID="))
+    ]
+    print("\n".join(public_lines), flush=True)
     with SessionLocal() as db:
         added = seed(db)
-        fixtures = seed_demo_scenarios(db, user_id=admin_ids[0])
+        fixtures = seed_demo_scenarios(
+            db, user_id=admin_ids[0], buyer_user_ids=tuple(customer_ids)
+        )
     print(f"Products added: {added}; demo fixtures: {fixtures}", flush=True)
     print("Local development seed complete.", flush=True)
 
