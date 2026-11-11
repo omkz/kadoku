@@ -56,6 +56,7 @@ try {
   }
   await pool.query('UPDATE "user" SET role = $1 WHERE id = $2', ["admin", userId]);
   console.log(`Admin access ready: ${email}`);
+  console.log(`SEED_ADMIN_USER_ID=${userId}`);
 } finally {
   await pool.end();
 }
