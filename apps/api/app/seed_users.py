@@ -222,6 +222,10 @@ def main() -> None:
     try:
         accounts = load_accounts(target=args.target, environ=os.environ)
         with SessionLocal() as db:
+            # Local interactive provisioning must share Better Auth's PostgreSQL.
+            # SQLite is supported only by the isolated unit-test fixture.
+            if db.get_bind().dialect.name != "postgresql":
+                parser.error("Demo user provisioning requires the shared PostgreSQL database")
             _ensure_demo_target(
                 db, target=args.target, expected_db_host=args.expected_db_host,
                 expected_db_name=args.expected_db_name,
