@@ -43,6 +43,7 @@ DEMO_SHIPPING = {
 }
 # Dates are derived from the seed date once, then left alone on reruns.
 DEMO_PEOPLE = (
+    ("Mom", "mother", ["cooking", "tea"], 18),
     ("Demo Alex", "friend", ["coffee", "books"], 7),
     ("Demo Morgan", "sibling", ["gardening", "art"], 28),
     ("Demo Taylor", "coworker", ["technology", "music"], -12),
