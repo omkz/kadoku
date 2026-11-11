@@ -33,8 +33,18 @@ if (!email || !email.includes("@") || password.length < 8) {
   throw new Error("Set DEV_ADMIN_EMAIL and DEV_ADMIN_PASSWORD (at least 8 characters) in apps/web/.env");
 }
 
-// One customer account; My People (including Mom) belongs to this customer.
-const customer = { name: "Nadia", email: "nadia@kadoku.test" };
+// One local customer. My People (including Mom) belongs to this account.
+const customer = {
+  name: (process.env.DEV_CUSTOMER_NAME || "").trim(),
+  email: (process.env.DEV_CUSTOMER_EMAIL || "").trim().toLowerCase(),
+  password: process.env.DEV_CUSTOMER_PASSWORD || "",
+};
+if (!customer.name || !customer.email.includes("@") || customer.password.length < 8) {
+  throw new Error("Set DEV_CUSTOMER_NAME, DEV_CUSTOMER_EMAIL and DEV_CUSTOMER_PASSWORD (at least 8 characters) in apps/web/.env");
+}
+if (customer.email === email) {
+  throw new Error("DEV_ADMIN_EMAIL must differ from DEV_CUSTOMER_EMAIL");
+}
 
 const pool = new pg.Pool({ connectionString: urlString });
 const auth = betterAuth({
@@ -44,7 +54,7 @@ const auth = betterAuth({
   emailAndPassword: { enabled: true, minPasswordLength: 8 },
 });
 
-async function ensureAccount(accountEmail, name, role) {
+async function ensureAccount(accountEmail, name, role, accountPassword) {
   const found = await pool.query(
     'SELECT id, role FROM "user" WHERE lower(email) = $1',
     [accountEmail],
@@ -57,7 +67,7 @@ async function ensureAccount(accountEmail, name, role) {
     }
   } else {
     const created = await auth.api.signUpEmail({
-      body: { email: accountEmail, password, name },
+      body: { email: accountEmail, password: accountPassword, name },
     });
     id = created.user.id;
   }
@@ -70,16 +80,13 @@ async function ensureAccount(accountEmail, name, role) {
 }
 
 try {
-  const adminId = await ensureAccount(email, "Kadoku Admin", "admin");
+  const adminId = await ensureAccount(email, "Kadoku Admin", "admin", password);
   console.log(`Admin ready: ${email}`);
   console.log(`SEED_ADMIN_USER_ID=${adminId}`);
-  if (customer.email === email) {
-    throw new Error("DEV_ADMIN_EMAIL must differ from the customer email");
-  }
-  const customerId = await ensureAccount(customer.email, customer.name, "user");
+  const customerId = await ensureAccount(customer.email, customer.name, "user", customer.password);
   console.log(`Customer ready: ${customer.name} (${customer.email})`);
   console.log(`SEED_CUSTOMER_USER_ID=${customerId}`);
-  console.log("Customer password uses DEV_ADMIN_PASSWORD (local development only).");
+  console.log("Customer credentials come from DEV_CUSTOMER_* (local development only).");
 } finally {
   await pool.end();
 }
