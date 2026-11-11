@@ -276,7 +276,7 @@ def main() -> None:
         # Launch it only after both schemas exist and stop it after demo signups.
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as logfile:
             process = subprocess.Popen(
-                ["npm", "run", "dev:web", "--", "--port", "3000"],
+                ["npm", "--workspace", "apps/web", "run", "dev", "--", "--port", "3000"],
                 cwd=ROOT_DIR, env=child_env,
                 stdout=logfile, stderr=subprocess.STDOUT,
                 start_new_session=True,
