@@ -1,0 +1,83 @@
+
+services:
+  - type: web
+    name: kadoku-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: apps/api
+    buildCommand: uv sync --frozen
+    startCommand: uv run alembic upgrade head && uv run python -m app.seed && uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.16
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kadoku-db
+          property: connectionString
+      - key: BETTER_AUTH_URL
+        fromService:
+          type: web
+          name: kadoku-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: kadoku-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: kadoku-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: GUEST_QUOTA_SECRET
+        generateValue: true
+      - key: PAYPAL_MODE
+        value: sandbox
+
+  - type: web
+    name: kadoku-web
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: apps/web
+    buildCommand: corepack pnpm install --frozen-lockfile && corepack pnpm build
+    startCommand: corepack pnpm start -- --hostname 0.0.0.0 --port $PORT
+    initialDeployHook: corepack pnpm dlx auth@1.7.18 migrate --yes
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: AUTH_DATABASE_URL
+        fromDatabase:
+          name: kadoku-db
+          property: connectionString
+      - key: BETTER_AUTH_URL
+        fromService:
+          type: web
+          name: kadoku-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: GUEST_COOKIE_SECRET
+        fromService:
+          type: web
+          name: kadoku-api
+          envVarKey: GUEST_QUOTA_SECRET
+      - key: API_PROXY_TARGET
+        fromService:
+          type: web
+          name: kadoku-api
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED
+        value: "false"
+
+databases:
+  - name: kadoku-db
+    plan: free
+    region: singapore
+    databaseName: kadoku
+    user: kadoku
+    ipAllowList: []

@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -29,6 +30,15 @@ class Settings(BaseSettings):
     paypal_client_secret: str = ""
     paypal_webhook_id: str = ""
     paypal_mode: str = "sandbox"
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_postgres_driver(cls, value: str) -> str:
+        """Render provides postgresql://, but Kadoku installs psycopg 3, not psycopg2."""
+        for prefix in ("postgresql://", "postgres://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
 
 
 @lru_cache
