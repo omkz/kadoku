@@ -310,6 +310,10 @@ and `apps/web/.env`):
 cd apps/api
 uv run python -m app.db reset
 uv run python -m app.db seed
+
+# Existing local DB with missing Better Auth tables (no data deletion):
+# uv run python -m app.db migrate
+# uv run python -m app.db seed
 ```
 
 - `reset` **deletes all data** in the local Kadoku public schema, then
