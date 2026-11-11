@@ -1,29 +1,46 @@
-// Seed a local Better Auth administrator through Better Auth's password hasher.
+// Seed Better Auth demo accounts in a validated local/staging database.
 // Invoked by: cd apps/api && uv run python -m app.db seed
 import { betterAuth } from "better-auth";
 import pg from "pg";
 
 const urlString = process.env.AUTH_DATABASE_URL;
+const target = process.env.KADOKU_SEED_TARGET || "local";
 const expectedName = process.env.KADOKU_EXPECTED_DB_NAME;
 const expectedPort = process.env.KADOKU_EXPECTED_DB_PORT || "5432";
-if (!urlString || !expectedName) throw new Error("Missing local DB configuration");
+const expectedHost = process.env.KADOKU_EXPECTED_DB_HOST;
+if (!urlString || !expectedName) throw new Error("Missing database configuration");
 const url = new URL(urlString);
 const dbName = decodeURIComponent(url.pathname.slice(1));
-if (
-  !["postgres:", "postgresql:"].includes(url.protocol) ||
-  !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
-  dbName !== expectedName ||
-  (url.port || "5432") !== expectedPort ||
-  !["kadoku", "kadoku_test"].includes(dbName)
-) {
-  throw new Error("Refusing to seed an admin outside the selected local Kadoku database");
+if (!["postgres:", "postgresql:"].includes(url.protocol) ||
+    dbName !== expectedName || (url.port || "5432") !== expectedPort) {
+  throw new Error("Better Auth database does not match the selected target");
+}
+if (target === "local") {
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+      !["kadoku", "kadoku_test"].includes(dbName)) {
+    throw new Error("Refusing to seed outside the selected local Kadoku database");
+  }
+} else if (target === "staging") {
+  const authOrigin = new URL(process.env.BETTER_AUTH_URL || "");
+  if (process.env.ENVIRONMENT !== "staging" ||
+      process.env.PAYPAL_MODE !== "sandbox" ||
+      process.env.STAGING_DEMO_SEED_ENABLED !== "true" ||
+      process.env.KADOKU_CONFIRM_STAGING !== "true" ||
+      !expectedHost || url.hostname.toLowerCase() !== expectedHost.toLowerCase() ||
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+      authOrigin.protocol !== "https:" ||
+      authOrigin.hostname.toLowerCase() !== (process.env.KADOKU_EXPECTED_AUTH_HOST || "").toLowerCase()) {
+    throw new Error("Staging seed needs an explicit staging environment, DB/HTTPS host match and confirmation");
+  }
+} else {
+  throw new Error("Unknown database seed target");
 }
 if (!process.env.BETTER_AUTH_SECRET) {
   throw new Error("Set BETTER_AUTH_SECRET in apps/web/.env");
 }
 
 if (process.argv.includes("--check")) {
-  console.log("Verified local Better Auth database configuration.");
+  console.log("Verified Better Auth database configuration for " + target + ".");
   process.exit(0);
 }
 
@@ -45,6 +62,9 @@ if (!customer.name || !customer.email.includes("@") || customer.password.length 
 if (customer.email === email) {
   throw new Error("DEV_ADMIN_EMAIL must differ from DEV_CUSTOMER_EMAIL");
 }
+if (target === "staging" && (password.length < 16 || customer.password.length < 16)) {
+  throw new Error("Staging demo passwords must each have at least 16 characters");
+}
 
 const pool = new pg.Pool({ connectionString: urlString });
 const auth = betterAuth({
@@ -62,8 +82,15 @@ async function ensureAccount(accountEmail, name, role, accountPassword) {
   let id;
   if (found.rowCount) {
     id = found.rows[0].id;
-    if (role === "user" && found.rows[0].role && found.rows[0].role !== "user") {
-      throw new Error("A seeded customer email already belongs to a privileged account");
+    if (found.rows[0].role && found.rows[0].role !== role) {
+      throw new Error("A seeded email already has a different role; refusing to change it");
+    }
+    // Never take over an existing identity merely by knowing its email.
+    const signedIn = await auth.api.signInEmail({
+      body: {email: accountEmail, password: accountPassword},
+    });
+    if (signedIn.user.id !== id) {
+      throw new Error("Existing Better Auth identity does not match");
     }
   } else {
     const created = await auth.api.signUpEmail({
@@ -86,7 +113,7 @@ try {
   const customerId = await ensureAccount(customer.email, customer.name, "user", customer.password);
   console.log(`Customer ready: ${customer.name} (${customer.email})`);
   console.log(`SEED_CUSTOMER_USER_ID=${customerId}`);
-  console.log("Customer credentials come from DEV_CUSTOMER_* (local development only).");
+  console.log("Customer credentials come from DEV_CUSTOMER_* for the selected test environment.");
 } finally {
   await pool.end();
 }
