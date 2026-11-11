@@ -76,6 +76,32 @@ def test_account_scoped_scenarios_are_visible_only_to_test_user(
     assert client.get("/api/v1/recipients", headers=other).json() == []
 
 
+def test_development_seed_uses_distinct_buyers_and_keeps_people_separate(database):
+    admin_id = "test-admin"
+    buyers = ("buyer-nadia", "buyer-rina", "buyer-dimas", "buyer-farah", "buyer-bima")
+    now = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+    with database() as db:
+        # First seed mimics an older development DB with admin-owned orders.
+        assert seed_demo_scenarios(db, now=now, user_id=admin_id) == {
+            "orders": len(DAYS_AGO), "recipients": 5, "occasions": 4,
+        }
+        result = seed_demo_scenarios(
+            db, now=now, user_id=admin_id, buyer_user_ids=buyers
+        )
+        assert result == {"orders": 0, "recipients": 0, "occasions": 0}
+        orders = list(db.scalars(select(Order)).all())
+        assert len(orders) == len(DAYS_AGO)
+        assert {order.user_id for order in orders} == set(buyers)
+        assert all(order.user_id != admin_id for order in orders)
+        assert {r.name for r in db.scalars(select(Recipient)).all()} == {
+            "Alex", "Morgan", "Taylor", "Casey", "Jordan"
+        }
+        assert {r.user_id for r in db.scalars(select(Recipient)).all()} == {admin_id}
+        assert seed_demo_scenarios(
+            db, now=now, user_id=admin_id, buyer_user_ids=buyers
+        ) == {"orders": 0, "recipients": 0, "occasions": 0}
+
+
 def test_demo_orders_populate_analytics_without_customer_pii(
     database, client, token_factory, monkeypatch, set_auth_role,
 ):
