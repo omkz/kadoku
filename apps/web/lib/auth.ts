@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { admin, jwt } from "better-auth/plugins";
+import {ac, roles} from "./auth-roles";
 import { Pool } from "pg";
 
 const pool = new Pool({connectionString: process.env.AUTH_DATABASE_URL});
@@ -16,5 +17,5 @@ export const auth = betterAuth({
       requireEmailVerification: true,
     },
   } : {},
-  plugins: [jwt({jwks: {keyPairConfig: {alg: "EdDSA", crv: "Ed25519"}}})],
+  plugins: [admin({ac, roles, defaultRole:"user", adminRoles:["admin","super_admin"]}), jwt({jwks: {keyPairConfig: {alg: "EdDSA", crv: "Ed25519"}}})],
 });

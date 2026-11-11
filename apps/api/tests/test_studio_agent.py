@@ -35,9 +35,9 @@ def payload(**changes):
     return base
 
 
-def ready(monkeypatch):
+def ready(monkeypatch, set_auth_role):
     settings = get_settings()
-    monkeypatch.setattr(settings, "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     monkeypatch.setattr(settings, "studio_agent_enabled", True)
     monkeypatch.setattr(settings, "studio_agent_model", "gemini/gemini-2.5-flash")
     monkeypatch.setattr(settings, "gemini_api_key", "nonsecret-test-api-key")
@@ -54,7 +54,7 @@ def fake_response(*, text="Created your chart", calls=None):
     )
 
 
-def test_admin_only_and_explicit_opt_in(client, token_factory, monkeypatch):
+def test_admin_only_and_explicit_opt_in(client, token_factory, monkeypatch, set_auth_role):
     settings=get_settings()
     monkeypatch.setattr(settings, "studio_agent_enabled", False)
     monkeypatch.setattr(settings, "studio_agent_model", "")
@@ -62,7 +62,7 @@ def test_admin_only_and_explicit_opt_in(client, token_factory, monkeypatch):
     assert client.get(ENDPOINT + "/status").status_code == 401
     assert client.post(ENDPOINT + "/turn", json=payload()).status_code == 401
     assert client.get(ENDPOINT + "/status", headers=headers(token_factory)).status_code == 403
-    monkeypatch.setattr(settings, "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     h=headers(token_factory)
     status=client.get(ENDPOINT + "/status", headers=h)
     assert status.status_code == 200
@@ -71,8 +71,8 @@ def test_admin_only_and_explicit_opt_in(client, token_factory, monkeypatch):
     assert denied.status_code == 503
 
 
-def test_proxy_forwards_tool_schemas_and_model_returns_calls(client, token_factory, monkeypatch):
-    ready(monkeypatch)
+def test_proxy_forwards_tool_schemas_and_model_returns_calls(client, token_factory, monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     seen=[]
     async def model(**kwargs):
         seen.append(kwargs)
@@ -105,8 +105,8 @@ def test_proxy_forwards_tool_schemas_and_model_returns_calls(client, token_facto
     assert not any("GEMINI_API_KEY" in str(x) for x in seen[0].values())
 
 
-def test_tool_history_replayed_as_openai_messages(client,token_factory,monkeypatch):
-    ready(monkeypatch)
+def test_tool_history_replayed_as_openai_messages(client,token_factory,monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     seen=[]
     async def model(**kwargs):
         seen.append(kwargs)
@@ -131,8 +131,8 @@ def test_tool_history_replayed_as_openai_messages(client,token_factory,monkeypat
     assert messages[4]["content"]=="Now show tea"
 
 
-def test_proxy_rejects_unsupported_content_and_tools(client,token_factory,monkeypatch):
-    ready(monkeypatch)
+def test_proxy_rejects_unsupported_content_and_tools(client,token_factory,monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     h=headers(token_factory)
     bad=payload(input=[{
         "type":"message","kind":"input","role":"user",
@@ -147,8 +147,8 @@ def test_proxy_rejects_unsupported_content_and_tools(client,token_factory,monkey
     assert client.post(ENDPOINT+"/turn",json=bad,headers=h).status_code==422
 
 
-def test_proxy_returns_provider_errors_without_leaking_secrets(client,token_factory,monkeypatch):
-    ready(monkeypatch)
+def test_proxy_returns_provider_errors_without_leaking_secrets(client,token_factory,monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     async def failing(**kwargs):
         raise RuntimeError("gemini sensitive-secret-123")
     monkeypatch.setattr(agent,"_provider_completion",failing)
@@ -157,7 +157,7 @@ def test_proxy_returns_provider_errors_without_leaking_secrets(client,token_fact
     assert "sensitive-secret" not in response.text
 
 
-def test_dotenv_key_is_loaded_into_settings(tmp_path, monkeypatch):
+def test_dotenv_key_is_loaded_into_settings(tmp_path, monkeypatch, set_auth_role):
     """Regression: LiteLLM cannot see keys parsed solely by BaseSettings."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -174,9 +174,8 @@ def test_dotenv_key_is_loaded_into_settings(tmp_path, monkeypatch):
 
 
 def test_agent_not_enabled_when_model_key_is_missing(
-    client, token_factory, monkeypatch,
-):
-    ready(monkeypatch)
+    client, token_factory, monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     settings=get_settings()
     monkeypatch.setattr(settings,"gemini_api_key","")
     monkeypatch.setattr(settings,"google_api_key","")
@@ -187,7 +186,7 @@ def test_agent_not_enabled_when_model_key_is_missing(
     assert "Gemini API key is missing" in response.json()["detail"]
 
 
-def test_safe_provider_error_statuses_and_never_expose_key():
+def test_safe_provider_error_statuses_and_never_expose_key(, set_auth_role):
     secret="sensitive-provider-key-value"
     class ProviderException(Exception):
         def __init__(self, status):
@@ -213,9 +212,8 @@ def test_safe_provider_error_statuses_and_never_expose_key():
 
 
 def test_studio_text_only_turn_does_not_use_mcp_workaround(
-    client, token_factory, monkeypatch,
-):
-    ready(monkeypatch)
+    client, token_factory, monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     observed=[]
     async def model(**kwargs):
         observed.append(kwargs)
@@ -229,10 +227,9 @@ def test_studio_text_only_turn_does_not_use_mcp_workaround(
 
 
 def test_studio_history_accepts_decoded_tool_arguments(
-    client, token_factory, monkeypatch,
-):
+    client, token_factory, monkeypatch, set_auth_role):
     """Studio may replay decoded arguments instead of JSON-string arguments."""
-    ready(monkeypatch)
+    ready(monkeypatch, set_auth_role)
     observed=[]
     async def model(**kwargs):
         observed.append(kwargs)
@@ -255,9 +252,8 @@ def test_studio_history_accepts_decoded_tool_arguments(
 
 
 def test_studio_history_accepts_empty_arguments_and_legacy_call_id(
-    client, token_factory, monkeypatch,
-):
-    ready(monkeypatch)
+    client, token_factory, monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     observed=[]
     async def model(**kwargs):
         observed.append(kwargs)
@@ -277,10 +273,9 @@ def test_studio_history_accepts_empty_arguments_and_legacy_call_id(
 
 
 def test_missing_gemini_function_call_id_is_generated(
-    client, token_factory, monkeypatch,
-):
+    client, token_factory, monkeypatch, set_auth_role):
     """A null LiteLLM call ID must not poison the following AG Studio turn."""
-    ready(monkeypatch)
+    ready(monkeypatch, set_auth_role)
     async def model(**kwargs):
         call=SimpleNamespace(
             id=None,
@@ -304,9 +299,8 @@ def test_missing_gemini_function_call_id_is_generated(
 
 
 def test_invalid_prior_call_reports_shape_without_sensitive_data(
-    client, token_factory, monkeypatch,
-):
-    ready(monkeypatch)
+    client, token_factory, monkeypatch, set_auth_role):
+    ready(monkeypatch, set_auth_role)
     body=payload()
     body["input"] += [{"kind":"output","type":"function_call",
                        "callId":None,"name":"add_widget",
@@ -317,7 +311,7 @@ def test_invalid_prior_call_reports_shape_without_sensitive_data(
     assert "private-name" not in response.text
 
 
-def test_admin_ai_hourly_limit_is_bounded_per_account(monkeypatch):
+def test_admin_ai_hourly_limit_is_bounded_per_account(monkeypatch, set_auth_role):
     """No provider call should be needed to exhaust the request budget."""
     from collections import defaultdict, deque
     from fastapi import HTTPException
@@ -341,7 +335,7 @@ def test_admin_ai_hourly_limit_is_bounded_per_account(monkeypatch):
     assert len(agent._rate_windows["admin-two"]) == 1
 
 
-def test_admin_ai_hourly_limit_expires_old_requests(monkeypatch):
+def test_admin_ai_hourly_limit_expires_old_requests(monkeypatch, set_auth_role):
     from collections import defaultdict, deque
 
     monkeypatch.setattr(agent, "_rate_windows", defaultdict(deque))

@@ -1,7 +1,6 @@
 """Admin security and real catalog/order operations over the test database."""
 from sqlalchemy import select
 
-from app.core.config import get_settings
 from app.models import Order, Product
 
 
@@ -9,7 +8,7 @@ def admin_headers(token_factory):
     return {"Authorization": f"Bearer {token_factory(sub='test-user-a')}"}
 
 
-def test_admin_api_fails_closed_for_guests_and_non_admins(client, token_factory, monkeypatch):
+def test_admin_api_fails_closed_for_guests_and_non_admins(client, token_factory, monkeypatch, set_auth_role):
     urls = [
         "/api/v1/admin/overview",
         "/api/v1/admin/products",
@@ -20,7 +19,7 @@ def test_admin_api_fails_closed_for_guests_and_non_admins(client, token_factory,
         assert client.get(url).status_code == 401
         assert client.get(url, headers=admin_headers(token_factory)).status_code == 403
 
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "admin-another-account")
+    set_auth_role("admin-another-account", "admin")
     for url in urls:
         assert client.get(url, headers=admin_headers(token_factory)).status_code == 403
     assert client.post("/api/v1/admin/products", json={
@@ -30,9 +29,8 @@ def test_admin_api_fails_closed_for_guests_and_non_admins(client, token_factory,
 
 
 def test_admin_catalog_create_edit_disable_and_server_pagination(
-    client, token_factory, monkeypatch
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "other-user, test-user-a ")
+    client, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     headers = admin_headers(token_factory)
     overview = client.get("/api/v1/admin/overview", headers=headers)
     assert overview.status_code == 200, overview.text
@@ -94,9 +92,8 @@ def test_admin_catalog_create_edit_disable_and_server_pagination(
 
 
 def test_admin_orders_list_all_buyers_without_shipping_pii(
-    client, database, token_factory, monkeypatch
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    client, database, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         db.add(Order(
@@ -139,9 +136,8 @@ def test_admin_orders_list_all_buyers_without_shipping_pii(
 
 
 def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
-    client, database, token_factory, monkeypatch
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    client, database, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         db.add_all([
@@ -188,9 +184,8 @@ def test_admin_customers_is_paginated_and_excludes_guest_and_private_data(
 
 
 def test_admin_catalog_sku_image_validation_and_uniqueness(
-    client, token_factory, monkeypatch
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    client, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     headers = admin_headers(token_factory)
     payload = {
         "name": "A test listing", "description": "Test-only catalog listing",
@@ -223,10 +218,9 @@ def test_admin_catalog_sku_image_validation_and_uniqueness(
 
 
 def test_admin_fulfillment_requires_paid_and_valid_transition_and_audits(
-    client, database, token_factory, monkeypatch
-):
+    client, database, token_factory, monkeypatch, set_auth_role):
     from app.models import FulfillmentEvent
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         unpaid = Order(
@@ -289,9 +283,8 @@ def test_admin_fulfillment_requires_paid_and_valid_transition_and_audits(
 
 
 def test_admin_cannot_mark_order_shipped_without_shipping_address(
-    client, database, token_factory, monkeypatch
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    client, database, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         row = Order(

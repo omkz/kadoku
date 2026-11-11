@@ -4,11 +4,12 @@ import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 import dynamic from "next/dynamic";
+import AdminTeam from "./AdminTeam";
 
 // AG Studio runs in the browser; never server-render its DOM-bound engine.
 const AdminAnalytics = dynamic(()=>import("./AdminAnalytics"), {ssr:false});
 
-type Section = "overview" | "analytics" | "products" | "orders" | "customers" | "settings";
+type Section = "overview" | "analytics" | "products" | "orders" | "customers" | "team" | "settings";
 type Access = "checking" | "allowed" | "denied" | "signed-out" | "error";
 
 type Overview = {
@@ -94,6 +95,7 @@ const sections: {id:Section;label:string;symbol:string}[] = [
   {id:"products", label:"Products", symbol:"▦"},
   {id:"orders", label:"Orders", symbol:"▤"},
   {id:"customers", label:"Customers", symbol:"♙"},
+  {id:"team", label:"Team", symbol:"♧"},
   {id:"settings", label:"Settings", symbol:"⚙"},
 ];
 
@@ -385,7 +387,7 @@ export default function AdminDashboard() {
       <a className="admin-logo" href="/" aria-label="Kadoku storefront"><span aria-hidden="true">✦</span><span className="admin-logo-word">kadoku<span className="admin-logo-dot">.</span></span></a>
       <p className="admin-sidebar-label">STORE MANAGEMENT</p>
       <nav aria-label="Admin dashboard">
-        {sections.map(item=><button type="button" key={item.id}
+        {sections.filter(item=>item.id!=="team" || (session?.user as {role?:string}|undefined)?.role==="super_admin").map(item=><button type="button" key={item.id}
           className={"admin-nav-button " + (section===item.id ? "is-active" : "")}
           aria-current={section===item.id ? "page" : undefined}
           title={item.label}
@@ -399,6 +401,7 @@ export default function AdminDashboard() {
       </div>
     </aside>
     <main className="admin-main">
+      {section==="team" && (session?.user as {role?:string}|undefined)?.role==="super_admin" && session?.user?.id && <AdminTeam currentUserId={session.user.id}/> }
       <div className="admin-topline">
         <div className="admin-topline-start">
           {section==="analytics" && <button type="button" className="admin-sidebar-toggle"
