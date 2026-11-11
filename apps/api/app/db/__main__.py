@@ -20,7 +20,7 @@ from app.db.session import SessionLocal, engine
 from app.seed import seed
 from app.seed_scenarios import seed_demo_scenarios
 
-API_DIR = Path(__file__).resolve().parents[1]
+API_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = API_DIR.parent / "web"
 
 
