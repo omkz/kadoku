@@ -180,13 +180,18 @@ def seed_demo_scenarios(
     if user_id:
         for name, relation, interests, offset in DEMO_PEOPLE:
             recipient_id = _id(f"account/{user_id}/recipient/{name}")
-            if db.get(Recipient, recipient_id) is None:
+            recipient = db.get(Recipient, recipient_id)
+            display_name = name.removeprefix("Demo ")
+            if recipient is None:
                 db.add(Recipient(
-                    id=recipient_id, user_id=user_id, name=name,
+                    id=recipient_id, user_id=user_id, name=display_name,
                     relationship=relation, interests=interests, avoids=[],
                     usual_budget_minor=7000,
                 ))
                 created["recipients"] += 1
+            elif recipient.name == name:
+                # Upgrade only the original seeded label; preserve user edits.
+                recipient.name = display_name
             if offset is None:
                 continue
             date = (now + timedelta(days=offset)).date()
