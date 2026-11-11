@@ -303,43 +303,39 @@ The authenticated Studio Agent endpoint also logs just exception class chain, up
 
 ### Rails-style local reset and seed (development only)
 
-From the repository (requires local PostgreSQL and configured `apps/api/.env`
-and `apps/web/.env`):
+Configure `apps/api/.env` and `apps/web/.env` for your local PostgreSQL
+database, then run:
 
 ```bash
 cd apps/api
 uv run python -m app.db reset
 uv run python -m app.db seed
-
-# Existing local DB with missing Better Auth tables (no data deletion):
-# uv run python -m app.db migrate
-# uv run python -m app.db seed
 ```
 
-- `reset` **deletes all data** in the local Kadoku public schema, then
-  applies Alembic and Better Auth migrations. Never run against a shared DB.
-- `seed` idempotently creates 100 catalog products, **one admin account**,
-  **five separate customer accounts** (Nadia, Rina, Dimas, Farah, Bima),
-  and **38 fictional orders distributed among the five customers**.
-- Five recipient profiles (Alex, Morgan, Taylor, Casey, Jordan) and four
-  birthdays are stored in the admin account for convenient My People preview.
-  **Recipients are not customer accounts**. The admin does not own seeded
-  purchase orders. Customers only includes actual buyer accounts.
-- Configure `DEV_ADMIN_EMAIL` and `DEV_ADMIN_PASSWORD` (8+ characters) in
-  `apps/web/.env`. The five dev customer accounts use that same password
-  for local testing only. Passwords are hashed by Better Auth.
-- Existing admin-owned *seed fixture* orders are reassigned to buyers on the
-  next `seed`, without changing legitimate orders. Earlier anonymous seed
-  orders remain unchanged; do a local `reset` first for a clean 38-order dataset.
-- Repeated seeds do not create duplicate customers, orders, or recipients.
-  Existing account passwords are not overwritten.
-- These commands refuse remote PostgreSQL, production/staging environments,
-  live PayPal mode, and databases not named `kadoku` or `kadoku_test`.
-  `apps/api/.env` and `apps/web/.env` must target the same local database.
-- All seeded orders and payments are fictional, not real PayPal captures.
+- `reset` deletes the local Kadoku public schema and runs Alembic and
+  Better Auth migrations. **All existing local data is lost.**
+- `seed` creates exactly **two Better Auth accounts** in a fresh database:
+  the admin (`DEV_ADMIN_EMAIL`, usually `admin@kadoku.local`) and one
+  customer, **Nadia** (`nadia@kadoku.test`).
+- Both local accounts use `DEV_ADMIN_PASSWORD` (8+ characters) from
+  `apps/web/.env` when first created. Better Auth stores a password hash.
+  Role-based access still distinguishes the admin from the customer.
+- The seed also inserts 100 catalog products and 38 fictional purchase
+  orders owned **only by Nadia**. Admin Customers displays one buyer.
+- Nadia's **My People** includes Mom, Alex, Morgan, Taylor, Casey and Jordan,
+  with five birthday records. Mom is a **recipient**, not another user.
+  The admin has no seeded recipients and no customer orders.
+- Repeated `seed` calls do not create duplicate accounts or fixtures.
+  Existing passwords are not overwritten. On a previously seeded database,
+  older accounts and records are preserved; use `reset` once if you need
+  **exactly two accounts**.
+- The commands are restricted to local PostgreSQL named `kadoku` or
+  `kadoku_test`, environment development/test and PayPal Sandbox.
+  Seeded orders and payment states are fictional, **not PayPal captures**.
 
-To update only the demo product catalog without seeding accounts/orders, use
-`uv run python -m app.seed`.
+If Better Auth tables are missing, repair the existing local DB without
+dropping data using `uv run python -m app.db migrate` before `seed`.
+For a catalog-only update, use `uv run python -m app.seed`.
 
 ### Give an account admin access
 
