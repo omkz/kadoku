@@ -74,7 +74,7 @@ for exercising the Admin **Orders** and **Analytics** screens:
 - Order amounts snapshot the associated demo product price; no product stock
   is deducted or overwritten.
 - When `--user-id` is supplied, demo orders also appear in that specific
-  test account's **My Orders**; **5 demo recipients** and **4 birthdays** are
+  test account's **My Orders**; **6 demo recipients** and **5 birthdays** are
   added for My People/Upcoming moments. Without `--user-id`, orders are
   anonymous and appear in Admin/Analytics but not any user's My Orders.
 - Stable, deterministic IDs make reruns safe: only missing fixtures are added,
@@ -118,6 +118,14 @@ This release check is for a **demo**, not a production store or real checkout.
 3. Check home → recommendation (including zero-match state) → details → sign-in → PayPal **Sandbox** → return/cancel → My Orders; also verify the saved-person loading/retry state, mobile swipe and desktop arrows in a real browser.
 4. Use real deployment secrets, HTTPS, the correct `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS` and database endpoints. `GUEST_COOKIE_SECRET` and `GUEST_QUOTA_SECRET` must match; do not copy the CI placeholder values to deployments. Keep `PAYPAL_MODE=sandbox`; live PayPal is not implemented.
 5. Before making the demo public, review privacy/terms, login security, abuse and AI-cost limits, and what is disclosed about fictional catalog items and non-fulfillment. Passing CI alone **does not** make Kadoku ready for real commerce.
+
+## Render staging (synthetic demo data)
+
+The current Render deployment is staging: it uses PayPal Sandbox and the same
+two-account/100-product/38-order/six-recipient seed as localhost. Ordinary
+deploys run **non-destructive migrations only**, never `app.db reset` or
+`app.db seed`. For controlled staging migration/reset/seed from a trusted
+machine, see [Render staging database runbook](docs/render-staging.md).
 
 ## Local setup (Linux / macOS)
 
