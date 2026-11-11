@@ -78,13 +78,29 @@ def seed_all() -> None:
     name = _local_database_name()
     if not (WEB_DIR / ".env").is_file():
         raise RuntimeError("Create apps/web/.env before seeding (Better Auth needs it).")
+    # Create the Better Auth account before seeding account-owned orders/people.
+    # This also makes Admin Customers display the seeded buyer.
+    env = {
+        **os.environ,
+        "KADOKU_EXPECTED_DB_NAME": name,
+        "KADOKU_EXPECTED_DB_PORT": str(make_url(get_settings().database_url).port or 5432),
+    }
+    result = subprocess.run(
+        ("node", "--env-file=.env", "scripts/seed-admin.mjs"),
+        cwd=WEB_DIR, env=env, check=True, capture_output=True, text=True,
+    )
+    admin_ids = [
+        line.removeprefix("SEED_ADMIN_USER_ID=")
+        for line in result.stdout.splitlines()
+        if line.startswith("SEED_ADMIN_USER_ID=")
+    ]
+    if len(admin_ids) != 1 or not admin_ids[0]:
+        raise RuntimeError("Better Auth seed did not return an admin user ID")
+    print(result.stdout.replace(f"SEED_ADMIN_USER_ID={admin_ids[0]}\\n", ""), end="", flush=True)
     with SessionLocal() as db:
         added = seed(db)
-        fixtures = seed_demo_scenarios(db)
+        fixtures = seed_demo_scenarios(db, user_id=admin_ids[0])
     print(f"Products added: {added}; demo fixtures: {fixtures}", flush=True)
-    env = {**os.environ, "KADOKU_EXPECTED_DB_NAME": name,
-           "KADOKU_EXPECTED_DB_PORT": str(make_url(get_settings().database_url).port or 5432)}
-    _run("node", "--env-file=.env", "scripts/seed-admin.mjs", cwd=WEB_DIR, env=env)
     print("Local development seed complete.", flush=True)
 
 
