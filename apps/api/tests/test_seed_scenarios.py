@@ -77,9 +77,9 @@ def test_account_scoped_scenarios_are_visible_only_to_test_user(
 
 
 def test_demo_orders_populate_analytics_without_customer_pii(
-    database, client, token_factory, monkeypatch,
+    database, client, token_factory, monkeypatch, set_auth_role,
 ):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         seed_demo_scenarios(db, now=datetime.now(timezone.utc))
     h = {"Authorization": "Bearer " + token_factory(sub="test-user-a")}
