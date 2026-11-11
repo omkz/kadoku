@@ -303,38 +303,39 @@ The authenticated Studio Agent endpoint also logs just exception class chain, up
 
 ### Rails-style local reset and seed (development only)
 
-On `feature/admin-role-rbac`, these commands replace the manual development
-database rebuild and make a local administrator automatically:
+From the repository (requires local PostgreSQL and configured `apps/api/.env`
+and `apps/web/.env`):
 
 ```bash
-# First-time setup: configure apps/api/.env and apps/web/.env,
-# install backend dependencies (uv sync), frontend dependencies (pnpm install),
-# and create the local PostgreSQL database owned by kadoku.
 cd apps/api
 uv run python -m app.db reset
 uv run python -m app.db seed
 ```
 
-- `reset` **deletes every table and record in the local Kadoku public schema**,
-  then runs Alembic and Better Auth migrations. It does NOT seed.
-- `seed` adds the 100 demo catalog entries, 38 fictional orders/analytics
-  fixtures linked to the local administrator (including My Orders, five My People\n  recipients and four birthdays), and a Better Auth admin account. Set `DEV_ADMIN_EMAIL` and
-  `DEV_ADMIN_PASSWORD` (minimum 8 characters) in `apps/web/.env` before seeding.
-  For example, `DEV_ADMIN_EMAIL=admin@kadoku.local`.
-- The Customers list shows the seeded admin as an order-linked test buyer.\n  Re-running `seed` on a database previously populated with anonymous demo\n  orders also adds the account-owned fixture set. For a clean demo, reset first.\n- Repeating `seed` does not overwrite an existing admin password, and its
-  product/order fixtures are idempotent. Log in at `/sign-in` using the
-  configured credentials, then visit `/admin`. To change an existing admin password,
-  reset the disposable local database and seed again.
-- Both commands refuse non-local PostgreSQL, non-development/test environments,
-  live PayPal mode or databases not named `kadoku`/`kadoku_test`.
-  The frontend and backend environment files must refer to the same local DB.
-- Demo `paid` orders are fake, not PayPal captures. Never use this workflow
-  against real customer information or a shared database.
-- The commands require `pnpm` and Node 22 (with `--env-file`) installed.
+- `reset` **deletes all data** in the local Kadoku public schema, then
+  applies Alembic and Better Auth migrations. Never run against a shared DB.
+- `seed` idempotently creates 100 catalog products, **one admin account**,
+  **five separate customer accounts** (Nadia, Rina, Dimas, Farah, Bima),
+  and **38 fictional orders distributed among the five customers**.
+- Five recipient profiles (Alex, Morgan, Taylor, Casey, Jordan) and four
+  birthdays are stored in the admin account for convenient My People preview.
+  **Recipients are not customer accounts**. The admin does not own seeded
+  purchase orders. Customers only includes actual buyer accounts.
+- Configure `DEV_ADMIN_EMAIL` and `DEV_ADMIN_PASSWORD` (8+ characters) in
+  `apps/web/.env`. The five dev customer accounts use that same password
+  for local testing only. Passwords are hashed by Better Auth.
+- Existing admin-owned *seed fixture* orders are reassigned to buyers on the
+  next `seed`, without changing legitimate orders. Earlier anonymous seed
+  orders remain unchanged; do a local `reset` first for a clean 38-order dataset.
+- Repeated seeds do not create duplicate customers, orders, or recipients.
+  Existing account passwords are not overwritten.
+- These commands refuse remote PostgreSQL, production/staging environments,
+  live PayPal mode, and databases not named `kadoku` or `kadoku_test`.
+  `apps/api/.env` and `apps/web/.env` must target the same local database.
+- All seeded orders and payments are fictional, not real PayPal captures.
 
-For a **non-destructive** catalog update without generating orders/admin, keep
-using `uv run python -m app.seed`. For a real existing account, use the
-normal Better Auth RBAC administration path rather than the demo seeder.
+To update only the demo product catalog without seeding accounts/orders, use
+`uv run python -m app.seed`.
 
 ### Give an account admin access
 
