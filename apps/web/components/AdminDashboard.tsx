@@ -425,7 +425,7 @@ export default function AdminDashboard() {
           <div className="admin-stat"><span>Products</span><strong>{overview.products_total}</strong><small>{overview.products_active} active · {overview.products_out_of_stock} out of stock</small></div>
           <div className="admin-stat"><span>Awaiting processing</span><strong>{overview.awaiting_fulfillment}</strong><small>Paid, not yet processed</small></div>
           <div className="admin-stat"><span>Orders</span><strong>{overview.orders_total}</strong><small>{overview.orders_paid} marked paid</small></div>
-          <div className="admin-stat"><span>Sandbox captured amount</span><strong>{dollars(overview.sandbox_paid_minor)}</strong><small>Test payments, not revenue</small></div>
+          <div className="admin-stat"><span>Sandbox captured · All time</span><strong>{dollars(overview.sandbox_paid_minor)}</strong><small>Test payments, not revenue</small></div>
         </div>}
         <div className="admin-info">
           <div className="admin-info-icon">✳</div>
