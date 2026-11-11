@@ -92,7 +92,7 @@ def test_creates_three_roles_through_better_auth_and_sample_data(database):
             "owner@demo.test": "super_admin",
         }
         assert db.scalar(select(func.count(Order.id))) == 76
-        assert db.scalar(select(func.count(Recipient.id))) == 5
+        assert db.scalar(select(func.count(Recipient.id))) == 6
         repeated = provision_demo_users(db, client=fake, accounts=demo_accounts())
         assert repeated == provisioned
         assert db.scalar(select(func.count(Order.id))) == 76
