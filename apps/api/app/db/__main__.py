@@ -12,8 +12,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
+from dotenv import dotenv_values
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal, engine
@@ -55,6 +56,45 @@ def _check_web_database() -> None:
     _run("node", "--env-file=.env", "scripts/seed-admin.mjs", "--check", cwd=WEB_DIR, env=env)
 
 
+
+def _web_environment() -> dict[str, str]:
+    """Provide frontend .env to Better Auth CLI (outside of Next.js runtime)."""
+    values = dotenv_values(WEB_DIR / ".env")
+    return {**os.environ, **{key: value for key, value in values.items() if value is not None}}
+
+
+def _verify_auth_schema() -> None:
+    """The migration must create all core/plugin tables in Kadoku's database."""
+    schema = inspect(engine)
+    tables = set(schema.get_table_names(schema="public"))
+    missing = sorted({"user", "session", "account", "verification", "jwks"} - tables)
+    if missing:
+        raise RuntimeError("Better Auth migration incomplete: " + ", ".join(missing))
+    columns = {col["name"] for col in schema.get_columns("user", schema="public")}
+    if not {"role", "banned"}.issubset(columns):
+        raise RuntimeError("Better Auth admin role/banned columns are missing")
+
+
+def _apply_migrations() -> None:
+    _run(sys.executable, "-m", "alembic", "upgrade", "head")
+    _run(
+        "pnpm", "dlx", "auth@latest", "migrate",
+        "--config", "./lib/auth.ts", "--yes",
+        cwd=WEB_DIR, env=_web_environment(),
+    )
+    _verify_auth_schema()
+
+
+def migrate() -> None:
+    """Apply both migrations to existing local DB without deleting its data."""
+    _local_database_name()
+    if not (WEB_DIR / ".env").is_file():
+        raise RuntimeError("Create apps/web/.env before migrating.")
+    _check_web_database()
+    _apply_migrations()
+    print("Kadoku and Better Auth migrations complete.", flush=True)
+
+
 def reset() -> None:
     """Drop local Kadoku public schema and restore both app and auth tables."""
     name = _local_database_name()
@@ -67,9 +107,7 @@ def reset() -> None:
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE"))
         connection.execute(text("CREATE SCHEMA public"))
-    _run(sys.executable, "-m", "alembic", "upgrade", "head")
-    # Better Auth owns its own tables; Alembic intentionally doesn't manage them.
-    _run("pnpm", "dlx", "auth@latest", "migrate", "--yes", cwd=WEB_DIR)
+    _apply_migrations()
     print("Reset complete. Run: uv run python -m app.db seed", flush=True)
 
 
@@ -78,6 +116,8 @@ def seed_all() -> None:
     name = _local_database_name()
     if not (WEB_DIR / ".env").is_file():
         raise RuntimeError("Create apps/web/.env before seeding (Better Auth needs it).")
+    # Ensure authentication schema is present without resetting the DB.
+    migrate()
     # Create the Better Auth account before seeding account-owned orders/people.
     # This also makes Admin Customers display the seeded buyer.
     env = {
@@ -119,10 +159,10 @@ def seed_all() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Local Kadoku database commands")
-    parser.add_argument("command", choices=("reset", "seed"))
+    parser.add_argument("command", choices=("reset", "migrate", "seed"))
     args = parser.parse_args()
     try:
-        (reset if args.command == "reset" else seed_all)()
+        {"reset": reset, "migrate": migrate, "seed": seed_all}[args.command]()
     except (RuntimeError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Error: {exc}\n")
 
