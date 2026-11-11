@@ -318,10 +318,10 @@ uv run python -m app.db seed
 - `reset` **deletes every table and record in the local Kadoku public schema**,
   then runs Alembic and Better Auth migrations. It does NOT seed.
 - `seed` adds the 100 demo catalog entries, 38 fictional orders/analytics
-  fixtures and a local Better Auth administrator. Set `DEV_ADMIN_EMAIL` and
+  fixtures linked to the local administrator (including My Orders, five My People\n  recipients and four birthdays), and a Better Auth admin account. Set `DEV_ADMIN_EMAIL` and
   `DEV_ADMIN_PASSWORD` (minimum 8 characters) in `apps/web/.env` before seeding.
   For example, `DEV_ADMIN_EMAIL=admin@kadoku.local`.
-- Repeating `seed` does not overwrite an existing admin password, and its
+- The Customers list shows the seeded admin as an order-linked test buyer.\n  Re-running `seed` on a database previously populated with anonymous demo\n  orders also adds the account-owned fixture set. For a clean demo, reset first.\n- Repeating `seed` does not overwrite an existing admin password, and its
   product/order fixtures are idempotent. Log in at `/sign-in` using the
   configured credentials, then visit `/admin`. To change an existing admin password,
   reset the disposable local database and seed again.
