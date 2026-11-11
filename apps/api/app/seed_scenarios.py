@@ -105,6 +105,7 @@ def _ensure_local_dev_database(db: Session) -> None:
 
 def seed_demo_scenarios(
     db: Session, *, user_id: str | None = None, now: datetime | None = None,
+    buyer_user_ids: tuple[str, ...] | None = None,
     target: Literal["local", "staging"] = "local",
     expected_db_host: str | None = None, expected_db_name: str | None = None,
     commit: bool = True,
@@ -113,8 +114,10 @@ def seed_demo_scenarios(
 
     Default orders are anonymous (visible in admin, not My Orders). Passing a
     Better Auth test-account subject scopes a separate order set to that user
-    and adds example people/moments for the account. Different scopes are
-    separate datasets, so do not mix them on the same development database.
+    and adds example people/moments for the account. When buyer_user_ids is
+    supplied, 38 orders are distributed across those distinct customer accounts
+    and My People remains owned by user_id. Existing seeded orders originally
+    owned by user_id are reallocated in place, without duplicating them.
     """
     _ensure_demo_target(
         db, target=target, expected_db_host=expected_db_host,
@@ -122,6 +125,11 @@ def seed_demo_scenarios(
     )
     if user_id is not None and (not user_id.strip() or len(user_id) > 128):
         raise ValueError("user_id must be a non-empty Better Auth subject (max 128 chars)")
+    if buyer_user_ids is not None:
+        if not user_id or not buyer_user_ids or len(set(buyer_user_ids)) != len(buyer_user_ids):
+            raise ValueError("buyer_user_ids requires a profile owner and distinct buyers")
+        if any(not uid.strip() or len(uid) > 128 or uid == user_id for uid in buyer_user_ids):
+            raise ValueError("Buyers must be valid user IDs, distinct from the profile owner")
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -140,7 +148,12 @@ def seed_demo_scenarios(
 
     for index, days_ago in enumerate(DAYS_AGO):
         order_id = _id(f"{scope}/order/{index:03d}")
-        if db.get(Order, order_id) is not None:
+        buyer_id = buyer_user_ids[index % len(buyer_user_ids)] if buyer_user_ids else user_id
+        existing_order = db.get(Order, order_id)
+        if existing_order is not None:
+            if buyer_user_ids and existing_order.user_id == user_id:
+                # Migrate only the old seed-owned admin orders, never arbitrary orders.
+                existing_order.user_id = buyer_id
             continue
         product = products[index % len(products)]
         status = STATUS_CYCLE[index % len(STATUS_CYCLE)]
@@ -160,7 +173,7 @@ def seed_demo_scenarios(
         delivered = fulfillment == "delivered"
         db.add(Order(
             id=order_id,
-            user_id=user_id,
+            user_id=buyer_id,
             product_id=product.id,
             price_snapshot_minor=product.price_minor,
             currency="USD",
