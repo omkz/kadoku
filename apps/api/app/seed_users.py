@@ -1,9 +1,6 @@
-"""Provision explicitly named demo accounts using Better Auth's public signup API.
+"""Provision test users through Better Auth, never by writing auth tables.
 
-The operator must control the API database and provide each demo password in
-environment variables. No direct writes to Better Auth password/account/session
-tables: Better Auth creates those using its configured hashing and session flow.
-This script is never called by the web service or by a deployment hook.
+Operator-only; not part of app startup or deployment.
 """
 from __future__ import annotations
 
@@ -68,11 +65,7 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
 def local_password_environment(
     environ: dict[str, str], *, interactive: bool, prompt=getpass.getpass,
 ) -> dict[str, str]:
-    """Prompt for missing local secrets, never generating/hardcoding credentials.
-
-    Shell-provided DEMO_*_PASSWORD values work in CI; interactive developer
-    use needs only one 'pnpm db:seed' command.
-    """
+    """Prompt for missing local passwords without generating or logging them."""
     values = dict(environ)
     missing = [suffix for suffix, _, _, _ in ACCOUNT_SPECS
                if not values.get(f"DEMO_{suffix}_PASSWORD")]
@@ -146,12 +139,7 @@ def provision_demo_users(
     with_business_data: bool = True,
     allow_two_accounts: bool = False,
 ) -> dict[str, str]:
-    """Create missing users, verify ownership of existing identities, assign roles.
-
-    A colliding email is not automatically adopted. A previous demo identity
-    can be reused only with the same email, exact demo display name, and a
-    successful Better Auth password sign-in matching its stored user ID.
-    """
+    """Provision test roles; reuse existing users only after identity verification."""
     _ensure_demo_target(
         db, target=target, expected_db_host=expected_db_host,
         expected_db_name=expected_db_name,
@@ -223,7 +211,6 @@ def provision_demo_users(
         provisioned[account.label.lower()] = account.email
 
     if with_business_data:
-        # This also creates missing demo products and analytics fixtures.
         seed_catalog(db)
         seed_sample_for_account(
             db, email=provisioned["customer"], target=target,
@@ -256,8 +243,7 @@ def main() -> None:
         )
     try:
         with SessionLocal() as db:
-            # Local interactive provisioning must share Better Auth's PostgreSQL.
-            # SQLite is supported only by the isolated unit-test fixture.
+            # Live Better Auth provisioning requires PostgreSQL, not test SQLite.
             if db.get_bind().dialect.name != "postgresql":
                 parser.error("Demo user provisioning requires the shared PostgreSQL database")
             _ensure_demo_target(
@@ -268,8 +254,7 @@ def main() -> None:
                 target=args.target, auth_url=get_settings().better_auth_url,
                 expected_auth_host=args.expected_auth_host,
             )
-            # Local-only interactive setup; staging always requires explicitly
-            # supplied secrets and never prompts for privileged accounts.
+            # Staging credentials must be supplied explicitly.
             account_env = (
                 local_password_environment(os.environ, interactive=sys.stdin.isatty())
                 if args.target == "local" else os.environ
