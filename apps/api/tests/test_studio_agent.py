@@ -347,3 +347,32 @@ def test_admin_ai_hourly_limit_expires_old_requests(monkeypatch, set_auth_role):
     agent._reserve_call("admin")
     agent._reserve_call("admin")  # both old requests have expired
     assert list(agent._rate_windows["admin"]) == [4602.0]
+
+
+def test_studio_provider_calls_can_be_paced_for_low_rpm(monkeypatch):
+    """Per-process spacing can keep a multi-step agent below a 5 RPM ceiling."""
+    import asyncio
+    import time
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "studio_agent_min_interval_seconds", 0.05)
+    monkeypatch.setattr(agent, "_last_provider_start", None)
+
+    async def check():
+        await agent._pace_provider_call()
+        first = time.monotonic()
+        await agent._pace_provider_call()
+        second = time.monotonic()
+        assert second - first >= 0.04
+
+    asyncio.run(check())
+
+
+def test_studio_provider_pacing_is_off_by_default(monkeypatch):
+    """Normal providers remain fast; no mandatory delay is introduced."""
+    import asyncio
+
+    monkeypatch.setattr(get_settings(), "studio_agent_min_interval_seconds", 0.0)
+    monkeypatch.setattr(agent, "_last_provider_start", None)
+    asyncio.run(agent._pace_provider_call())
+    assert agent._last_provider_start is None
