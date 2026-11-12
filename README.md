@@ -9,7 +9,7 @@
 - **Web:** Next.js 16, React 19, TypeScript, CSS, Better Auth (email/password; optional Google OAuth).
 - **API:** Python, FastAPI, SQLAlchemy 2, Alembic; traditional layered architecture.
 - **Database:** PostgreSQL (native/local is supported); SQLite is supported for backend-only local tests.
-- **AI:** Deterministic catalog-grounded recommendation engine with optional LiteLLM intent extraction **and natural concierge replies**; model can be changed using `AI_MODEL`. LangChain is not required.
+- **AI:** Deterministic catalog-grounded recommendation engine with LiteLLM intent extraction **and natural concierge replies**; model can be changed using `AI_MODEL`. LangChain is not required.
 - **Checkout:** PayPal Orders v2 Sandbox using redirect approval and server-side capture. The integration is intentionally **blocked in live mode**.
 - **Voice:** Browser SpeechRecognition where supported, with typing fallback; may rely on the browser vendor's speech service.
 
@@ -155,14 +155,9 @@ uv run uvicorn app.main:app --reload --port 8000
 
 API health: <http://localhost:8000/api/health>  ·  OpenAPI: <http://localhost:8000/docs>
 
-Install AI support when you have a provider API key:
+LiteLLM is included in the default API dependencies. To enable model-powered replies, set `AI_MODEL=provider/model` and the matching provider API key in `apps/api/.env`; no extra installation flag is required.
 
-```bash
-uv sync --extra ai
-# Set AI_MODEL=provider/model and the matching provider API key in apps/api/.env
-```
-
-Without an AI key, the application still works in **rules-based demo mode**. When configured, the LLM extracts gift intent and writes short catalog-grounded replies; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), install optional AI dependencies with `uv sync --extra ai`, and provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
+Without an AI key, the application still works in **rules-based demo mode**. When configured, the LLM extracts gift intent and writes short catalog-grounded replies; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
 
 ### Troubleshoot local gift chat / AI
 
@@ -171,7 +166,7 @@ work without a paid AI key using rule-based intent extraction. To enable
 LLM-powered intent extraction in **localhost**, run from `apps/api`:
 
 ```bash
-uv sync --extra ai
+uv sync
 # in apps/api/.env (not apps/web/.env):
 # AI_MODEL=gemini/gemini-2.5-flash
 # GEMINI_API_KEY=<your secret>
@@ -307,11 +302,11 @@ AG Studio can run locally without a licence; a paid or trial licence is required
 
 Kadoku uses **AG Studio's actual built-in AI harness, agents, tools and chat panel**, connected to a small in-project adapter at `apps/web/lib/studio-agent-adapter.ts`. The adapter sends each turn to the **admin-only** FastAPI route `POST /api/v1/admin/analytics/agent/turn`. FastAPI converts AG Studio messages and tool schemas to LiteLLM Chat Completions with a provider such as Gemini; the LLM returns tool calls to AG Studio, **which performs dashboard updates in the browser**. Provider credentials never reach the browser, and there is no separate ChatGPT API requirement.
 
-**Local setup:** Install the backend's optional AI dependencies and set these values in **`apps/api/.env` only**, then restart FastAPI:
+**Local setup:** Run `uv sync` (LiteLLM is installed by default) and set these values in **`apps/api/.env` only**, then restart FastAPI:
 
 ```bash
 cd apps/api
-uv sync --extra ai --extra test
+uv sync --extra test
 # In apps/api/.env:
 # STUDIO_AGENT_ENABLED=true
 # STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash
@@ -335,7 +330,7 @@ With the Gemini key already configured in `apps/api/.env`, run:
 
 ```bash
 cd apps/api
-uv run --extra ai python -m app.studio_diagnostics
+uv run python -m app.studio_diagnostics
 ```
 
 This makes **two small real provider requests** with no customer or transaction data, reports the LiteLLM version, model, success/failure, HTTP status and exception **class names only** (never raw provider exception text or API keys). It intentionally costs a small amount of provider quota. Interpret the results:
