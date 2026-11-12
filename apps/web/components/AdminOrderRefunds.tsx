@@ -93,6 +93,7 @@ export default function AdminOrderRefunds({
         setAttempt(saved);
       }
     } catch (error) {
+      setRefunds(null);
       setHistoryError(error instanceof Error ? error.message : "Could not load refunds.");
       setAttempt(readAttempt(order.id));
     } finally {
@@ -110,7 +111,8 @@ export default function AdminOrderRefunds({
   const activeAttempt = pending
     ? {requestKey: pending.request_key, amountMinor: pending.amount_minor}
     : attempt;
-  const canRefund = isSuperAdmin && order.refundable && remainingMinor > 0;
+  const canRefund = isSuperAdmin && order.refundable && remainingMinor > 0 &&
+    (refunds !== null || attempt !== null);
 
   async function submitRefund(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -201,7 +203,7 @@ export default function AdminOrderRefunds({
           </button>
         </div>
       </form>
-      : <p className="admin-muted">Refund unavailable: requires an unfulfilled, captured USD order with a refundable balance.</p>}
+      : <p className="admin-muted">Refund unavailable: check the refund history and confirm the order has an unfulfilled USD capture with a remaining balance.</p>}
     </>}
     {!isSuperAdmin && <p className="admin-muted">Only a super administrator can issue refunds.</p>}
   </div>;
