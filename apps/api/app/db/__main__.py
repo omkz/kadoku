@@ -256,11 +256,11 @@ def _staging_accounts() -> list[DemoAccount]:
     if admin_email == customer_email:
         raise RuntimeError("Staging admin and customer emails must differ")
     if (
-        len(admin_password) < 16 or len(customer_password) < 16
+        len(admin_password) < 12 or len(customer_password) < 12
         or len(admin_password) > 128 or len(customer_password) > 128
         or admin_password == customer_password
     ):
-        raise RuntimeError("Use separate demo passwords of 16–128 characters")
+        raise RuntimeError("Use separate demo passwords of 12–128 characters")
     return [
         DemoAccount("ADMIN", "Kadoku Admin", admin_email, "admin", admin_password),
         DemoAccount("CUSTOMER", customer_name, customer_email, "user", customer_password),
