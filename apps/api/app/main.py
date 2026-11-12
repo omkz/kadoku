@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.routers import gifts, people, checkout, auth, admin, admin_team, analytics, studio_agent
+from app.routers import gifts, people, checkout, auth, admin, admin_team, analytics, studio_agent, payments
 
 app = FastAPI(title="Kadoku API", version="0.1.0")
 settings = get_settings()
@@ -20,6 +20,7 @@ app.include_router(admin.router)
 app.include_router(admin_team.router)
 app.include_router(analytics.router)
 app.include_router(studio_agent.router)
+app.include_router(payments.router)
 
 
 @app.get("/api/health")
