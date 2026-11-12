@@ -74,7 +74,7 @@ for exercising the Admin **Orders** and **Analytics** screens:
 - Order amounts snapshot the associated demo product price; no product stock
   is deducted or overwritten.
 - When `--user-id` is supplied, demo orders also appear in that specific
-  test account's **My Orders**; **5 demo recipients** and **4 birthdays** are
+  test account's **My Orders**; **6 demo recipients** and **5 birthdays** are
   added for My People/Upcoming moments. Without `--user-id`, orders are
   anonymous and appear in Admin/Analytics but not any user's My Orders.
 - Stable, deterministic IDs make reruns safe: only missing fixtures are added,
@@ -119,6 +119,14 @@ This release check is for a **demo**, not a production store or real checkout.
 4. Use real deployment secrets, HTTPS, the correct `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS` and database endpoints. `GUEST_COOKIE_SECRET` and `GUEST_QUOTA_SECRET` must match; do not copy the CI placeholder values to deployments. Keep `PAYPAL_MODE=sandbox`; live PayPal is not implemented.
 5. Before making the demo public, review privacy/terms, login security, abuse and AI-cost limits, and what is disclosed about fictional catalog items and non-fulfillment. Passing CI alone **does not** make Kadoku ready for real commerce.
 
+## Render staging (synthetic demo data)
+
+The current Render deployment is staging: it uses PayPal Sandbox and the same
+two-account/100-product/38-order/six-recipient seed as localhost. Ordinary
+deploys run **non-destructive migrations only**, never `app.db reset` or
+`app.db seed`. For controlled staging migration/reset/seed from a trusted
+machine, see [Render staging database runbook](docs/render-staging.md).
+
 ## Local setup (Linux / macOS)
 
 ### 1. PostgreSQL (native; no Docker needed)
@@ -155,6 +163,48 @@ uv sync --extra ai
 ```
 
 Without an AI key, the application still works in **rules-based demo mode**. The LLM is used only for gift-intent extraction; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), install optional AI dependencies with `uv sync --extra ai`, and provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
+
+### Troubleshoot local gift chat / AI
+
+Chat recommendations use `POST /api/v1/gifts/recommendations`. They still
+work without a paid AI key using rule-based intent extraction. To enable
+LLM-powered intent extraction in **localhost**, run from `apps/api`:
+
+```bash
+uv sync --extra ai
+# in apps/api/.env (not apps/web/.env):
+# AI_MODEL=gemini/gemini-2.5-flash
+# GEMINI_API_KEY=<your secret>
+# alternatively: AI_MODEL=openai/<your model>, OPENAI_API_KEY=<your secret>
+# restart uvicorn after editing .env
+```
+
+Do not commit API keys or put them in `NEXT_PUBLIC_*`. To check configuration
+**without printing secrets**:
+
+```bash
+uv run python - <<'PY'
+import importlib.util
+from app.core.config import get_settings
+s=get_settings()
+print("AI_MODEL:", s.ai_model or "(empty: rules only)")
+print("LiteLLM installed:", importlib.util.find_spec("litellm") is not None)
+print("Provider key configured:", bool(s.gemini_api_key or s.google_api_key or s.openai_api_key))
+PY
+```
+
+The response field `provider` is `llm` for a successful extraction,
+`rules` when `AI_MODEL` is empty and `rules-fallback` when a configured LLM
+request fails. An LLM outage does not make the catalog recommender unavailable.
+
+If the request never reaches FastAPI, check that both servers are running and
+`apps/web/.env` has `API_PROXY_TARGET=http://localhost:8000`. Verify
+`http://localhost:3000/backend/api/health` responds with `status: ok`;
+`/api/guest` must also succeed for visitors who are not signed in, and
+`GUEST_COOKIE_SECRET` in the web must match `GUEST_QUOTA_SECRET` in the API.
+Guest recommendations are limited to **one per UTC day**; a 429 response
+means the daily limit has been reached. Signed-in members have a separate
+quota. First messages must contain at least ten characters.
 
 ### 3. Next.js and Better Auth
 
@@ -300,6 +350,44 @@ The authenticated Studio Agent endpoint also logs just exception class chain, up
 
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
+
+### Rails-style local reset and seed (development only)
+
+Configure `apps/api/.env` and `apps/web/.env` for your local PostgreSQL
+database, then run:
+
+```bash
+cd apps/api
+uv run python -m app.db reset
+uv run python -m app.db seed
+```
+
+- `reset` deletes the local Kadoku public schema and runs Alembic and
+  Better Auth migrations. **All existing local data is lost.**
+- `seed` creates exactly **two Better Auth accounts** on a fresh database:
+  one admin, and one customer. Configure `DEV_ADMIN_EMAIL`,
+  `DEV_ADMIN_PASSWORD`, `DEV_CUSTOMER_NAME`, `DEV_CUSTOMER_EMAIL`
+  and `DEV_CUSTOMER_PASSWORD` in `apps/web/.env`. Passwords require
+  at least eight characters and the two emails must be different.
+- The seed also inserts 100 products and 38 fictional orders, owned
+  **only by the customer**, while Admin Customers shows one buyer.
+- The customer's **My People** includes Mom, Alex, Morgan, Taylor,
+  Casey, and Jordan, with five birthday records. Recipients are not
+  customer accounts; the admin has no seeded orders or recipients.
+- Better Auth hashes passwords. Re-running seed does not overwrite
+  existing account passwords. Reset the disposable local database to
+  recreate accounts with changed credentials.
+- Repeated `seed` calls do not create duplicate accounts or fixtures.
+  Existing passwords are not overwritten. On a previously seeded database,
+  older accounts and records are preserved; use `reset` once if you need
+  **exactly two accounts**.
+- The commands are restricted to local PostgreSQL named `kadoku` or
+  `kadoku_test`, environment development/test and PayPal Sandbox.
+  Seeded orders and payment states are fictional, **not PayPal captures**.
+
+If Better Auth tables are missing, repair the existing local DB without
+dropping data using `uv run python -m app.db migrate` before `seed`.
+For a catalog-only update, use `uv run python -m app.seed`.
 
 ### Give an account admin access
 

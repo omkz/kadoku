@@ -4,7 +4,7 @@ os.environ["GUEST_QUOTA_SECRET"] = "test-hmac-secret"
 os.environ["AI_MODEL"] = ""
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.db.base import Base
@@ -17,6 +17,11 @@ from app.seed import seed
 def database():
     engine = create_engine("sqlite://", connect_args={"check_same_thread":False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            'CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, '
+            'email TEXT NOT NULL UNIQUE, role TEXT, banned BOOLEAN NOT NULL DEFAULT 0)'
+        )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as session:
         seed(session)
@@ -62,3 +67,16 @@ def token_factory(monkeypatch):
         return jwt.encode(claims, private, algorithm="EdDSA", headers={"kid": "local-test-key"})
 
     return build
+
+@pytest.fixture
+def set_auth_role(database):
+    def set_role(user_id: str, role: str, *, banned: bool = False) -> None:
+        with database() as db:
+            db.execute(text(
+                'INSERT INTO "user" (id, name, email, role, banned) '
+                'VALUES (:id, :name, :email, :role, :banned) '
+                'ON CONFLICT(id) DO UPDATE SET role = :role, banned = :banned'
+            ), {"id":user_id, "name":user_id, "email":f"{user_id}@example.test",
+                "role":role, "banned":banned})
+            db.commit()
+    return set_role

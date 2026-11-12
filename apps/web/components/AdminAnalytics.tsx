@@ -352,7 +352,7 @@ export default function AdminAnalytics() {
       <div className="admin-stat"><span>Catalog products</span><strong>{summary.catalog_products}</strong><small>{summary.active_products} published</small></div>
       <div className="admin-stat"><span>Checkout orders</span><strong>{summary.orders}</strong><small>{paymentRate===null?"No orders in period":paymentRate+"% paid"}</small></div>
       <div className="admin-stat"><span>Paid · awaiting processing</span><strong>{summary.awaiting_fulfillment}</strong><small>Internal fulfillment tracker</small></div>
-      <div className="admin-stat"><span>Sandbox captured</span><strong>{dollars(summary.sandbox_captured_minor)}</strong><small>Test payments, not revenue</small></div>
+      <div className="admin-stat"><span>Sandbox captured · Last {days} days</span><strong>{dollars(summary.sandbox_captured_minor)}</strong><small>Test payments, not revenue</small></div>
     </div>}
 
     {stateReady && data && <div className="admin-studio-wrap">

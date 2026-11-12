@@ -57,29 +57,80 @@ def test_account_scoped_scenarios_are_visible_only_to_test_user(
     now = datetime.now(timezone.utc)
     with database() as db:
         added = seed_demo_scenarios(db, now=now, user_id="test-user-a")
-        assert added == {"orders": len(DAYS_AGO), "recipients": 5, "occasions": 4}
+        assert added == {"orders": len(DAYS_AGO), "recipients": 6, "occasions": 5}
         assert seed_demo_scenarios(db, now=now, user_id="test-user-a") == {
             "orders": 0, "recipients": 0, "occasions": 0
         }
-        assert db.scalar(select(func.count(Recipient.id))) == 5
-        assert db.scalar(select(func.count(Occasion.id))) == 4
+        assert db.scalar(select(func.count(Recipient.id))) == 6
+        assert db.scalar(select(func.count(Occasion.id))) == 5
 
     h = {"Authorization": "Bearer " + token_factory(sub="test-user-a")}
     orders = client.get("/api/v1/orders", headers=h)
     assert orders.status_code == 200, orders.text
     assert len(orders.json()) == len(DAYS_AGO)
-    assert len(client.get("/api/v1/recipients", headers=h).json()) == 5
-    assert len(client.get("/api/v1/occasions", headers=h).json()) == 4
+    assert len(client.get("/api/v1/recipients", headers=h).json()) == 6
+    assert len(client.get("/api/v1/occasions", headers=h).json()) == 5
 
     other = {"Authorization": "Bearer " + token_factory(sub="another-test-user")}
     assert client.get("/api/v1/orders", headers=other).json() == []
     assert client.get("/api/v1/recipients", headers=other).json() == []
 
 
+def test_single_customer_seed_owns_orders_and_people_not_admin(database, client, token_factory):
+    customer_id = "buyer-nadia"
+    admin_id = "dev-admin"
+    now = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+    with database() as db:
+        added = seed_demo_scenarios(db, user_id=customer_id, now=now)
+        assert added == {"orders": len(DAYS_AGO), "recipients": 6, "occasions": 5}
+        orders = list(db.scalars(select(Order)).all())
+        people = list(db.scalars(select(Recipient)).all())
+        assert len(orders) == 38
+        assert {row.user_id for row in orders} == {customer_id}
+        assert {row.user_id for row in people} == {customer_id}
+        assert any(row.name == "Mom" and row.relationship == "mother" for row in people)
+        assert seed_demo_scenarios(db, user_id=customer_id, now=now) == {
+            "orders": 0, "recipients": 0, "occasions": 0,
+        }
+
+    customer_h = {"Authorization": "Bearer " + token_factory(sub=customer_id)}
+    admin_h = {"Authorization": "Bearer " + token_factory(sub=admin_id)}
+    assert len(client.get("/api/v1/orders", headers=customer_h).json()) == 38
+    assert len(client.get("/api/v1/recipients", headers=customer_h).json()) == 6
+    assert client.get("/api/v1/orders", headers=admin_h).json() == []
+    assert client.get("/api/v1/recipients", headers=admin_h).json() == []
+
+
+def test_development_seed_uses_distinct_buyers_and_keeps_people_separate(database):
+    admin_id = "test-admin"
+    buyers = ("buyer-nadia", "buyer-rina", "buyer-dimas", "buyer-farah", "buyer-bima")
+    now = datetime(2026, 11, 10, 15, 0, tzinfo=timezone.utc)
+    with database() as db:
+        # First seed mimics an older development DB with admin-owned orders.
+        assert seed_demo_scenarios(db, now=now, user_id=admin_id) == {
+            "orders": len(DAYS_AGO), "recipients": 6, "occasions": 5,
+        }
+        result = seed_demo_scenarios(
+            db, now=now, user_id=admin_id, buyer_user_ids=buyers
+        )
+        assert result == {"orders": 0, "recipients": 0, "occasions": 0}
+        orders = list(db.scalars(select(Order)).all())
+        assert len(orders) == len(DAYS_AGO)
+        assert {order.user_id for order in orders} == set(buyers)
+        assert all(order.user_id != admin_id for order in orders)
+        assert {r.name for r in db.scalars(select(Recipient)).all()} == {
+            "Mom", "Alex", "Morgan", "Taylor", "Casey", "Jordan"
+        }
+        assert {r.user_id for r in db.scalars(select(Recipient)).all()} == {admin_id}
+        assert seed_demo_scenarios(
+            db, now=now, user_id=admin_id, buyer_user_ids=buyers
+        ) == {"orders": 0, "recipients": 0, "occasions": 0}
+
+
 def test_demo_orders_populate_analytics_without_customer_pii(
-    database, client, token_factory, monkeypatch,
+    database, client, token_factory, monkeypatch, set_auth_role,
 ):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         seed_demo_scenarios(db, now=datetime.now(timezone.utc))
     h = {"Authorization": "Bearer " + token_factory(sub="test-user-a")}

@@ -1,14 +1,15 @@
-"""Explicit, local-only demo scenarios for Orders, Analytics, and optional My People.
+"""Explicit demo scenarios for Orders, Analytics, and optional My People.
 
-This creates *synthetic* orders, not real PayPal Sandbox captures. Never run
-against a production or remotely hosted database. The existing catalog seed
-is separate and must be run first.
+Creates *synthetic* orders, not PayPal Sandbox captures. Local development is
+the default; a dedicated staging opt-in requires independent guardrails.
+Never use with a production/payment-live database.
 """
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid5
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,6 +43,7 @@ DEMO_SHIPPING = {
 }
 # Dates are derived from the seed date once, then left alone on reruns.
 DEMO_PEOPLE = (
+    ("Mom", "mother", ["cooking", "tea"], 18),
     ("Demo Alex", "friend", ["coffee", "books"], 7),
     ("Demo Morgan", "sibling", ["gardening", "art"], 28),
     ("Demo Taylor", "coworker", ["technology", "music"], -12),
@@ -54,32 +56,81 @@ def _id(name: str) -> str:
     return str(uuid5(NAMESPACE_URL, "kadoku/dev-fixtures/v1/" + name))
 
 
-def _ensure_local_dev_database(db: Session) -> None:
+def _ensure_demo_target(
+    db: Session,
+    *,
+    target: Literal["local", "staging"] = "local",
+    expected_db_host: str | None = None,
+    expected_db_name: str | None = None,
+) -> None:
+    """Do not trust a command-line switch alone to authorize remote writes.
+
+    Every caller, including programmatic callers, goes through these checks.
+    Staging requires both opt-in environment variables and an exact database
+    host/name match. These are trusted-operator CLI helpers, never HTTP routes.
+    """
     settings = get_settings()
-    if settings.environment not in ("development", "test") or settings.paypal_mode != "sandbox":
-        raise RuntimeError(
-            "Demo scenario seed is restricted to development/test with PAYPAL_MODE=sandbox"
-        )
+    if settings.paypal_mode != "sandbox":
+        raise RuntimeError("Demo scenario seed requires PAYPAL_MODE=sandbox")
     url = db.get_bind().url
-    # Even a mistakenly configured ENVIRONMENT=development must not write to
-    # hosted/production databases. Unix-socket PostgreSQL is local (host None).
-    if url.host not in (None, "", "localhost", "127.0.0.1", "::1"):
-        raise RuntimeError("Demo scenario seed requires a local database")
+    host = (url.host or "").lower()
+    local_hosts = ("", "localhost", "127.0.0.1", "::1")
+
+    if target == "local":
+        if settings.environment not in ("development", "test"):
+            raise RuntimeError("Demo scenario seed is restricted to development/test locally")
+        if host not in local_hosts:
+            raise RuntimeError("Demo scenario seed requires a local database")
+        return
+
+    if target != "staging":
+        raise RuntimeError("Unknown demo seed target")
+    if settings.environment != "staging":
+        raise RuntimeError("Staging seed requires ENVIRONMENT=staging")
+    if not settings.staging_demo_seed_enabled:
+        raise RuntimeError("Staging seed requires STAGING_DEMO_SEED_ENABLED=true")
+    if not url.drivername.startswith("postgresql"):
+        raise RuntimeError("Staging seed requires PostgreSQL")
+    if host in local_hosts:
+        raise RuntimeError("Staging seed requires an explicitly identified remote database")
+    if not expected_db_host or host != expected_db_host.strip().lower():
+        raise RuntimeError("Staging database host does not match --expected-db-host")
+    if not expected_db_name or url.database != expected_db_name.strip():
+        raise RuntimeError("Staging database name does not match --expected-db-name")
+
+
+def _ensure_local_dev_database(db: Session) -> None:
+    """Preserve the original development-only safety contract."""
+    _ensure_demo_target(db, target="local")
 
 
 def seed_demo_scenarios(
     db: Session, *, user_id: str | None = None, now: datetime | None = None,
+    buyer_user_ids: tuple[str, ...] | None = None,
+    target: Literal["local", "staging"] = "local",
+    expected_db_host: str | None = None, expected_db_name: str | None = None,
+    commit: bool = True,
 ) -> dict[str, int]:
     """Insert only missing deterministic fixtures; never update existing rows.
 
     Default orders are anonymous (visible in admin, not My Orders). Passing a
     Better Auth test-account subject scopes a separate order set to that user
-    and adds example people/moments for the account. Different scopes are
-    separate datasets, so do not mix them on the same development database.
+    and adds example people/moments for the account. When buyer_user_ids is
+    supplied, 38 orders are distributed across those distinct customer accounts
+    and My People remains owned by user_id. Existing seeded orders originally
+    owned by user_id are reallocated in place, without duplicating them.
     """
-    _ensure_local_dev_database(db)
+    _ensure_demo_target(
+        db, target=target, expected_db_host=expected_db_host,
+        expected_db_name=expected_db_name,
+    )
     if user_id is not None and (not user_id.strip() or len(user_id) > 128):
         raise ValueError("user_id must be a non-empty Better Auth subject (max 128 chars)")
+    if buyer_user_ids is not None:
+        if not user_id or not buyer_user_ids or len(set(buyer_user_ids)) != len(buyer_user_ids):
+            raise ValueError("buyer_user_ids requires a profile owner and distinct buyers")
+        if any(not uid.strip() or len(uid) > 128 or uid == user_id for uid in buyer_user_ids):
+            raise ValueError("Buyers must be valid user IDs, distinct from the profile owner")
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -98,7 +149,12 @@ def seed_demo_scenarios(
 
     for index, days_ago in enumerate(DAYS_AGO):
         order_id = _id(f"{scope}/order/{index:03d}")
-        if db.get(Order, order_id) is not None:
+        buyer_id = buyer_user_ids[index % len(buyer_user_ids)] if buyer_user_ids else user_id
+        existing_order = db.get(Order, order_id)
+        if existing_order is not None:
+            if buyer_user_ids and existing_order.user_id == user_id:
+                # Migrate only the old seed-owned admin orders, never arbitrary orders.
+                existing_order.user_id = buyer_id
             continue
         product = products[index % len(products)]
         status = STATUS_CYCLE[index % len(STATUS_CYCLE)]
@@ -118,7 +174,7 @@ def seed_demo_scenarios(
         delivered = fulfillment == "delivered"
         db.add(Order(
             id=order_id,
-            user_id=user_id,
+            user_id=buyer_id,
             product_id=product.id,
             price_snapshot_minor=product.price_minor,
             currency="USD",
@@ -138,13 +194,18 @@ def seed_demo_scenarios(
     if user_id:
         for name, relation, interests, offset in DEMO_PEOPLE:
             recipient_id = _id(f"account/{user_id}/recipient/{name}")
-            if db.get(Recipient, recipient_id) is None:
+            recipient = db.get(Recipient, recipient_id)
+            display_name = name.removeprefix("Demo ")
+            if recipient is None:
                 db.add(Recipient(
-                    id=recipient_id, user_id=user_id, name=name,
+                    id=recipient_id, user_id=user_id, name=display_name,
                     relationship=relation, interests=interests, avoids=[],
                     usual_budget_minor=7000,
                 ))
                 created["recipients"] += 1
+            elif recipient.name == name:
+                # Upgrade only the original seeded label; preserve user edits.
+                recipient.name = display_name
             if offset is None:
                 continue
             date = (now + timedelta(days=offset)).date()
@@ -157,7 +218,8 @@ def seed_demo_scenarios(
                 ))
                 created["occasions"] += 1
 
-    db.commit()
+    if commit:
+        db.commit()
     return created
 
 
