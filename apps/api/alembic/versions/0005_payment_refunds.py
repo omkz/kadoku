@@ -18,6 +18,7 @@ def upgrade():
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("order_id", sa.String(36), sa.ForeignKey("orders.id"), nullable=False),
         sa.Column("request_key", sa.String(36), nullable=False),
+        sa.Column("actor_user_id", sa.String(128), nullable=False),
         sa.Column("amount_minor", sa.Integer(), nullable=False),
         sa.Column("currency", sa.String(3), nullable=False),
         sa.Column("status", sa.String(24), nullable=False),
