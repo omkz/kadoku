@@ -376,3 +376,46 @@ def test_studio_provider_pacing_is_off_by_default(monkeypatch):
     monkeypatch.setattr(agent, "_last_provider_start", None)
     asyncio.run(agent._pace_provider_call())
     assert agent._last_provider_start is None
+
+
+def test_studio_groq_provider_key_from_settings_and_isolation(
+    client, token_factory, monkeypatch, set_auth_role,
+):
+    """Groq AI Analyst uses its own API key, not Gemini or customer AI settings."""
+    ready(monkeypatch, set_auth_role)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "studio_agent_model", "groq/openai/gpt-oss-120b")
+    monkeypatch.setattr(settings, "groq_api_key", "groq-test-key")
+    seen = []
+
+    async def model(**kwargs):
+        seen.append(kwargs)
+        return fake_response(text="Ready")
+
+    monkeypatch.setattr(agent, "_provider_completion", model)
+    h = headers(token_factory)
+    assert client.get(ENDPOINT + "/status", headers=h).json()["enabled"] is True
+    result = client.post(ENDPOINT + "/turn", json=payload(), headers=h)
+    assert result.status_code == 200, result.text
+    assert seen[0]["model"] == "groq/openai/gpt-oss-120b"
+    assert seen[0]["api_key"] == "groq-test-key"
+    assert seen[0]["tools"][0]["function"]["name"] == "add_widget"
+
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    assert client.get(ENDPOINT + "/status", headers=h).json()["enabled"] is False
+    result = client.post(ENDPOINT + "/turn", json=payload(), headers=h)
+    assert result.status_code == 503
+    assert "Groq API key" in result.json()["detail"]
+    assert len(seen) == 1
+
+
+def test_groq_failure_message_is_safe():
+    class RateLimited(Exception):
+        status_code = 429
+
+    status, detail = agent._safe_provider_error(
+        RateLimited("secret must never be returned"), "groq/openai/gpt-oss-120b",
+    )
+    assert status == 429
+    assert "Groq quota" in detail
+    assert "secret" not in detail
