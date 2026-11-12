@@ -1,9 +1,6 @@
-"""Admin-only AG Studio direct-LLM adapter backed by LiteLLM.
+"""Admin-only AG Studio adapter: one bounded LiteLLM call per turn.
 
-AG Studio runs its built-in agent loop and executes widget tools in the browser.
-The backend makes ONE bounded model request per turn, translating the AG
-conversation to OpenAI Chat Completions (supported providers via LiteLLM).
-It never accepts URLs, executes tools, or exposes a provider credential.
+Widget tools run in the browser; server-side keys and tool execution stay isolated.
 """
 from __future__ import annotations
 
@@ -72,11 +69,7 @@ def _enabled() -> bool:
 
 
 def _safe_provider_error(exc: Exception, model: str) -> tuple[int, str]:
-    """Map SDK error class/status to actionable guidance; never return raw errors.
-
-    Provider exception strings may contain API keys, account details, or tool
-    payloads. Only the status and class name go to backend logs.
-    """
+    """Return safe errors without exposing provider exception contents."""
     status = getattr(exc, "status_code", None)
     code = status if isinstance(status, int) else None
     kind = type(exc).__name__.lower()
@@ -134,11 +127,7 @@ def _text_content(value: Any) -> str:
 
 
 def _history_call_id(item: dict[str, Any]) -> str:
-    """Use Studio callId; tolerate an older item whose id is the only locator.
-
-    IDs must match tool results, so do not invent an unrelated random id here.
-    A missing callId in *new* responses is fixed at the producer below.
-    """
+    """Preserve Studio tool IDs so results match the originating call."""
     call_id = item.get("callId") or item.get("call_id")
     if not call_id:
         call_id = item.get("id")
@@ -152,11 +141,7 @@ def _history_call_id(item: dict[str, Any]) -> str:
 
 
 def _history_call_arguments(value: Any) -> str:
-    """Normalise Studio's string/object argument representations.
-
-    The adapter and OpenAI use a JSON *string* but some Studio tool history
-    entries may already hold decoded object arguments. Preserve their data.
-    """
+    """Normalize string/object tool arguments without discarding data."""
     if value is None or value == "":
         return "{}"
     if isinstance(value, dict):
@@ -268,12 +253,7 @@ def _tools_and_choice(turn: StudioTurn) -> tuple[list[dict[str, Any]], Any]:
 
 
 async def _pace_provider_call() -> None:
-    """Space requests to respect low free-tier RPM limits.
-
-    Per-process only: use a shared rate limiter for multi-worker deployment.
-    The delay happens before a provider call and does not automatically retry
-    quota errors (in particular it cannot fix a daily request limit).
-    """
+    """Pace provider requests per process; this does not fix daily quotas."""
     global _last_provider_start
     interval = get_settings().studio_agent_min_interval_seconds
     if interval <= 0:
@@ -296,8 +276,7 @@ async def _provider_completion(**kwargs: Any) -> Any:
 
 
 def _strip_null_object_properties(value: Any) -> Any:
-    # Gemini sometimes outputs null for optional fields. Studio's validators
-    # expect those properties absent. Preserve null entries in arrays.
+    # Omit null object fields for Studio; preserve null array entries.
     if isinstance(value, list):
         return [_strip_null_object_properties(item) for item in value]
     if isinstance(value, dict):
@@ -333,8 +312,7 @@ async def turn(
         if get_settings().studio_agent_enabled and model.startswith("nebius/"):
             raise HTTPException(503, "Nebius API key is missing from apps/api/.env")
         raise HTTPException(503, "Studio AI is not configured on the server")
-    # Cap decoded JSON too, since request body may be decompressed by an upstream
-    # reverse proxy and content-length cannot be trusted.
+    # Proxies may decompress requests, so enforce a decoded size limit.
     if len(payload.model_dump_json().encode("utf-8")) > MAX_PAYLOAD_BYTES:
         raise HTTPException(413, "Studio AI request too large")
     messages = _chat_messages(payload)
@@ -352,18 +330,11 @@ async def turn(
         kwargs.update(
             tools=tools,
             tool_choice=choice,
-            # LiteLLM 1.106–1.108.3 incorrectly imports its MCP gateway
-            # for ordinary Chat Completions function tools, even when no MCP
-            # tools were supplied. On the SDK-only install this raises
-            # ModuleNotFoundError("mcp"), wrapped as APIConnectionError 500.
-            # Kadoku forbids provider-hosted/MCP tools above, so bypassing
-            # that handler is appropriate until LiteLLM fixes the regression.
-            # Private LiteLLM kwarg: recheck on future SDK upgrades.
+            # LiteLLM may invoke MCP for plain function calls; skip that handler.
+            # Private SDK flag: revisit when upgrading LiteLLM.
             _skip_mcp_handler=True,
         )
-    # A Pydantic settings .env file does not populate the process environment.
-    # LiteLLM needs this credential passed explicitly instead of assuming
-    # GEMINI_API_KEY was exported by a shell.
+    # Pydantic loads .env keys without exporting them to LiteLLM.
     provider_key = _provider_key(_configured_model())
     if provider_key:
         kwargs["api_key"] = provider_key
@@ -410,10 +381,7 @@ async def turn(
             raise HTTPException(502, "AI returned invalid tool arguments") from None
         if not isinstance(args, dict):
             raise HTTPException(502, "AI tool arguments must be an object")
-        # Some LiteLLM/Gemini responses omit function call IDs. AG Studio
-        # requires one to pair a function_call with its output on the next
-        # turn; mint an id here rather than sending a null callId that fails
-        # the history parser on the following request.
+        # Studio needs a stable ID to match tool results across turns.
         call_id = getattr(tool_call, "id", None)
         if not isinstance(call_id, str) or not (1 <= len(call_id) <= 128):
             call_id = "call_" + uuid4().hex
