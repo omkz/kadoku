@@ -22,9 +22,24 @@ async def extract_intent_json(prompt: str, model: str, *, timeout_seconds: float
                               max_output_tokens: int) -> dict[str, Any]:
     """One bounded provider request; higher layers validate every returned field."""
     from litellm import acompletion  # optional project extra [ai]
+    from app.core.config import get_settings
+
+    # pydantic-settings reads apps/api/.env without exporting values to the
+    # process environment. Pass credentials explicitly to LiteLLM so local
+    # configuration works even when the key is not also exported in the shell.
+    settings = get_settings()
+    provider = model.split("/", 1)[0].lower()
+    if provider == "gemini":
+        api_key = settings.gemini_api_key or settings.google_api_key
+    elif provider == "openai":
+        api_key = settings.openai_api_key
+    else:
+        api_key = ""
+    credentials = {"api_key": api_key} if api_key else {}
 
     response = await acompletion(
         model=model,
+        **credentials,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
