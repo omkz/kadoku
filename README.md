@@ -9,14 +9,14 @@
 - **Web:** Next.js 16, React 19, TypeScript, CSS, Better Auth (email/password; optional Google OAuth).
 - **API:** Python, FastAPI, SQLAlchemy 2, Alembic; traditional layered architecture.
 - **Database:** PostgreSQL (native/local is supported); SQLite is supported for backend-only local tests.
-- **AI:** Deterministic recommendation engine with optional LiteLLM intent extraction; model can be changed using `AI_MODEL`. LangChain/advanced agent orchestration is a **future integration**, not required for the working baseline.
+- **AI:** Deterministic catalog-grounded recommendation engine with optional LiteLLM intent extraction **and natural concierge replies**; model can be changed using `AI_MODEL`. LangChain is not required.
 - **Checkout:** PayPal Orders v2 Sandbox using redirect approval and server-side capture. The integration is intentionally **blocked in live mode**.
 - **Voice:** Browser SpeechRecognition where supported, with typing fallback; may rely on the browser vendor's speech service.
 
 ## What works now
 
 - Conversation-first homepage with voice-capable input; **no catalog-first homepage**.
-- End-to-end recommendation request to FastAPI, grounded in 100 **demo-only** products, showing up to three swipeable cards with one highlighted pick.
+- Multi-turn gift discovery: clarifying question for missing interests, contextual refinement and natural catalog-grounded wording when the LLM is available. Results use 100 **demo-only** products, up to three swipeable cards with one highlighted pick.
 - Budget, interests, occasion filtering and ranking; different product categories when possible.
 - Guest recommendation quota enforced on the backend; signed HttpOnly guest identity cookie issued by Next.js. Members have a larger daily quota.
 - Better Auth wiring, JWT/JWKS validation in FastAPI, private recipient and birthday endpoints, My People form.
@@ -162,7 +162,7 @@ uv sync --extra ai
 # Set AI_MODEL=provider/model and the matching provider API key in apps/api/.env
 ```
 
-Without an AI key, the application still works in **rules-based demo mode**. The LLM is used only for gift-intent extraction; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), install optional AI dependencies with `uv sync --extra ai`, and provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
+Without an AI key, the application still works in **rules-based demo mode**. When configured, the LLM extracts gift intent and writes short catalog-grounded replies; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), install optional AI dependencies with `uv sync --extra ai`, and provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
 
 ### Troubleshoot local gift chat / AI
 
@@ -193,7 +193,7 @@ print("Provider key configured:", bool(s.gemini_api_key or s.google_api_key or s
 PY
 ```
 
-The response field `provider` is `llm` for a successful extraction,
+The response field `provider` is `llm` for a successful intent extraction, while `reply_provider` separately reports natural reply generation.
 `rules` when `AI_MODEL` is empty and `rules-fallback` when a configured LLM
 request fails. An LLM outage does not make the catalog recommender unavailable.
 
