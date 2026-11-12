@@ -2,14 +2,14 @@
 
 **Your AI Gift Concierge.** Thoughtful gifts, made easy.
 
-Kadoku helps people choose gifts through a conversation instead of searching a catalog. It is a **Sandbox-only MVP** with fictional products; no real purchases or fulfillment are supported.
+Kadoku helps people find thoughtful gifts through natural conversation instead of browsing endless product catalogs.
 
 ## Features
 
 - Conversational gift discovery with budget, interests, occasion, and follow-up refinements.
 - Catalog-grounded recommendations: AI cannot invent products, prices, or stock.
 - Saved recipients and birthdays, gift notes, and order history.
-- PayPal Orders v2 Sandbox checkout with server-side capture verification.
+- PayPal Orders v2 checkout with server-side capture verification (currently Sandbox).
 - Admin catalog, orders, fulfillment tracking, and AG Studio analytics with AI Analyst.
 
 Guest users have **3 requests/day** and signed-in users **5 requests/day** by default.
@@ -41,11 +41,12 @@ cd apps/api
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run python -m app.seed
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-In `apps/api/.env`, set `DATABASE_URL` to the password you chose and replace `GUEST_QUOTA_SECRET` with a random secret (at least 32 characters). The API starts without model or PayPal keys; AI then uses rules-based recommendations and checkout stays disabled.
+In `apps/api/.env`, set `DATABASE_URL` to the password you chose and replace `GUEST_QUOTA_SECRET` with a random secret (at least 32 characters). The API starts without model or PayPal keys; gift suggestions use rules-based recommendations and checkout stays disabled.
+
+A new database starts with an empty catalog. To try Kadoku with **optional sample products**, run `uv run python -m app.seed` in `apps/api`. For sample orders and test accounts, see [local development](docs/local-development.md).
 
 **3. Web** (terminal 2, from the repository root)
 
@@ -78,9 +79,14 @@ For the frontend, run `pnpm build` and `pnpm typecheck` inside `apps/web`. PayPa
 - [AG Studio analytics and AI Analyst setup](docs/analytics.md)
 - [Render staging runbook](docs/render-staging.md)
 
-## Limits
+## Roadmap
 
-The catalog and seeded orders are fictional. PayPal captures are Sandbox-only, and the dashboard does not represent real revenue. Before live commerce, Kadoku needs verified suppliers, shipping/tax calculation, inventory reservation, refunds, stronger security controls, and customer support.
+- Connect verified suppliers and real product inventory.
+- Add shipping, tax calculation, and end-to-end fulfillment.
+- Support **PayPal Live** with refunds, payment reconciliation, and production safeguards.
+- Improve security, monitoring, and customer support.
+
+The current checkout integration uses PayPal Sandbox, and sample data is available for development. Live payments and real-order fulfillment are not implemented yet.
 
 ## License
 
