@@ -118,6 +118,13 @@ def test_staging_seed_accounts_require_distinct_strong_test_credentials(monkeypa
     monkeypatch.setenv("DEV_CUSTOMER_PASSWORD", values["DEV_ADMIN_PASSWORD"])
     with pytest.raises(RuntimeError, match="separate"):
         cli._staging_accounts()
+    # Exactly 12 characters is accepted for staging; 11 is not.
+    monkeypatch.setenv("DEV_ADMIN_PASSWORD", "123456789012")
+    monkeypatch.setenv("DEV_CUSTOMER_PASSWORD", "abcdefgh1234")
+    assert len(cli._staging_accounts()) == 2
+    monkeypatch.setenv("DEV_CUSTOMER_PASSWORD", "abcdefgh123")
+    with pytest.raises(RuntimeError, match="12–128"):
+        cli._staging_accounts()
 
 
 def test_staging_migration_does_not_try_better_auth_node_cli(staging_settings, monkeypatch):
