@@ -18,12 +18,13 @@ def test_recommendations_grounded_and_max_three(client):
     assert "gardening" in data["recommendations"][0]["reason"].lower()
     assert all(g["price_minor"] <= 10000 for g in data["recommendations"])
     assert all(g["demo_only"] for g in data["recommendations"])
-    assert data["remaining_today"] == 0
+    assert data["remaining_today"] == 2
 
 
 def test_guest_daily_quota_enforced(client):
     body = {"prompt":"Help me choose a birthday present under $100"}
-    assert client.post("/api/v1/gifts/recommendations", json=body).status_code == 200
+    for _ in range(3):
+        assert client.post("/api/v1/gifts/recommendations", json=body).status_code == 200
     assert client.post("/api/v1/gifts/recommendations", json=body).status_code == 429
 
 
