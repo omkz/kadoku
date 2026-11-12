@@ -6,7 +6,7 @@ Kadoku helps people find gifts through conversation instead of browsing endless 
 
 ## Features
 
-- Personalized gift discovery and conversational refinements, grounded in the store catalog.
+- Mobile-first gift discovery with one top pick, up to two alternatives, and catalog-grounded refinements.
 - Saved recipients, birthdays, gift notes, and order history.
 - PayPal Orders v2 checkout with server-verified capture (Sandbox).
 - Admin catalog, order management, and AG Studio analytics with AI Analyst.
@@ -67,7 +67,7 @@ External AI calls and PayPal approval/capture require separate manual tests.
 
 ## Documentation
 
-[Sample data](docs/sample-data.md) · [PayPal Sandbox](docs/paypal-sandbox.md) · [Admin roles](docs/admin-roles.md) · [AI Analyst](docs/analytics.md) · [Architecture](docs/architecture.md) · [Product](docs/product.md) · [Render staging](docs/render-staging.md)
+[Sample data](docs/sample-data.md) · [PayPal Sandbox](docs/paypal-sandbox.md) · [Admin roles](docs/admin-roles.md) · [AI Analyst](docs/analytics.md) · [Architecture](docs/architecture.md) · [Render staging](docs/render-staging.md)
 
 ## Roadmap
 
