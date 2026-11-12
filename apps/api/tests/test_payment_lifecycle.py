@@ -1,10 +1,12 @@
 """Contract tests for PayPal Sandbox recovery and refunds (no network)."""
+import asyncio
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.integrations.paypal import PayPalClient
 from app.models import Order, PaymentRefund, Product
 from app.routers import payments
 
@@ -236,3 +238,29 @@ def test_checked_refund_rejects_inexact_money_or_wrong_status():
     ]:
         with pytest.raises(HTTPException):
             payments.checked_refund(response, 6800, "USD")
+
+
+def test_refund_client_uses_cents_idempotency_and_full_representation():
+    paypal = PayPalClient.__new__(PayPalClient)
+    calls = []
+
+    async def fake_post(path, payload, request_id=None, *, representation=False):
+        calls.append((path, payload, request_id, representation))
+        return refund_reply(2500)
+
+    paypal._post = fake_post
+    result = asyncio.run(paypal.refund_capture("CAP-A", 2500, "USD", "fixed-key"))
+    assert result["status"] == "COMPLETED"
+    assert calls == [(
+        "/v2/payments/captures/CAP-A/refund",
+        {"amount": {"currency_code": "USD", "value": "25.00"}},
+        "refund-fixed-key", True,
+    )]
+
+    async def fake_get(path):
+        calls.append(("get", path))
+        return {"id": "PAYPAL-ORDER-A"}
+
+    paypal._get = fake_get
+    assert asyncio.run(paypal.get_order("PAYPAL-ORDER-A"))["id"] == "PAYPAL-ORDER-A"
+    assert calls[-1] == ("get", "/v2/checkout/orders/PAYPAL-ORDER-A")
