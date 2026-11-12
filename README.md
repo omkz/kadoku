@@ -202,7 +202,7 @@ If the request never reaches FastAPI, check that both servers are running and
 `http://localhost:3000/backend/api/health` responds with `status: ok`;
 `/api/guest` must also succeed for visitors who are not signed in, and
 `GUEST_COOKIE_SECRET` in the web must match `GUEST_QUOTA_SECRET` in the API.
-Guest recommendations are limited to **one per UTC day**; a 429 response
+Guest conversation requests are limited to **three per UTC day** (including clarification turns); a 429 response
 means the daily limit has been reached. Signed-in members have a separate
 quota. First messages must contain at least ten characters.
 
