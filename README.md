@@ -44,7 +44,7 @@ cd apps/web
 cp .env.example .env
 # Set AUTH_DATABASE_URL, BETTER_AUTH_SECRET, and GUEST_COOKIE_SECRET
 pnpm install
-pnpm dlx auth@latest migrate --yes
+pnpm dlx auth@latest migrate --yes --config ./lib/auth.ts
 pnpm dev
 ```
 
@@ -52,7 +52,7 @@ Use the same PostgreSQL database for both apps. `GUEST_COOKIE_SECRET` must match
 
 Open [localhost:3000](http://localhost:3000). API docs: [localhost:8000/docs](http://localhost:8000/docs).
 
-**Optional sample data:** Run `uv run python -m app.seed` from `apps/api` to populate 100 fictional products. See [local development](docs/local-development.md) for sample orders and accounts.
+**Optional sample data:** Run `uv run python -m app.seed` from `apps/api` to populate 100 fictional products. See [sample data](docs/sample-data.md) for sample orders and accounts.
 
 **Optional integrations:** Set `AI_MODEL` and its key for model-backed responses, or `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` for Sandbox checkout. Keep credentials in the backend `.env`.
 
@@ -67,9 +67,7 @@ External AI calls and PayPal approval/capture require separate manual tests.
 
 ## Documentation
 
-- [Development and sample data](docs/local-development.md)
-- [AG Studio and AI Analyst](docs/analytics.md)
-- [Render staging](docs/render-staging.md)
+[Sample data](docs/sample-data.md) · [PayPal Sandbox](docs/paypal-sandbox.md) · [Admin roles](docs/admin-roles.md) · [AI Analyst](docs/analytics.md) · [Architecture](docs/architecture.md) · [Product](docs/product.md) · [Render staging](docs/render-staging.md)
 
 ## Roadmap
 
