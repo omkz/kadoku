@@ -54,8 +54,9 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
         if not email or "@" not in email or any(char.isspace() for char in email):
             raise ValueError(f"Invalid DEMO_{suffix}_EMAIL")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
-        if len(password) < 16 or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 16–128 characters")
+        minimum = 12 if target == "staging" else 16
+        if len(password) < minimum or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain {minimum}–128 characters")
         accounts.append(DemoAccount(suffix, name, email, role, password))
     if len({entry.email for entry in accounts}) != len(accounts):
         raise ValueError("Demo user emails must be unique")
