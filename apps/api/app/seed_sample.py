@@ -1,8 +1,4 @@
-"""Seed repeatable synthetic data into an existing Better Auth test account.
-
-No accounts, credentials, permissions, or sessions are created or changed here.
-Never triggered automatically by API startup, Render deploy, or a web endpoint.
-"""
+"""Seed fictional orders for existing test accounts; never modify auth data."""
 from __future__ import annotations
 
 import argparse
@@ -27,12 +23,7 @@ def seed_sample_for_account(
     expected_db_name: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, dict[str, int]]:
-    """Add 38 anonymous dashboard orders + 38 account orders and five people.
-
-    Both sets use stable fixture UUIDs so reruns insert no duplicates. Only
-    accounts that already signed up with Better Auth may receive account
-    fixtures; sample data never grants admin roles or touches actual orders.
-    """
+    """Idempotently seed dashboard and account fixtures for a registered user."""
     _ensure_demo_target(
         db, target=target, expected_db_host=expected_db_host,
         expected_db_name=expected_db_name,

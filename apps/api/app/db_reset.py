@@ -1,9 +1,4 @@
-"""Reset only a dedicated local Kadoku PostgreSQL database, then migrate and seed.
-
-Intentionally destructive, manually invoked, never part of app startup or deploy.
-Requires Next.js stopped before wiping the schema; starts a disposable Next
-process *after* both migrations so Better Auth can sign up demo accounts.
-"""
+"""Destructive local-only reset; migrate before starting temporary Better Auth."""
 from __future__ import annotations
 
 import argparse
@@ -100,8 +95,7 @@ def local_web_environment(*, environ: dict[str, str] | None = None) -> tuple[str
         all_web_dbs.append(("shell", base_env["AUTH_DATABASE_URL"]))
         merged["AUTH_DATABASE_URL"] = base_env["AUTH_DATABASE_URL"]
 
-    # Different Next.js env files can override each other depending on mode.
-    # Refuse to erase DB A while Node might be pointed at DB B.
+    # Refuse reset when Next.js and FastAPI point to different databases.
     if not all_web_dbs:
         raise RuntimeError("Set AUTH_DATABASE_URL in apps/web/.env.local before db:reset")
     targets = {value for _, value in all_web_dbs}
@@ -113,7 +107,6 @@ def local_web_environment(*, environ: dict[str, str] | None = None) -> tuple[str
     web_url = all_web_dbs[0][1]
     merged.update(base_env)
     merged["AUTH_DATABASE_URL"] = web_url
-    # The validated API BETTER_AUTH_URL is applied by main() below.
     return web_url, merged
 
 
@@ -245,8 +238,7 @@ def main() -> None:
         origin = settings.better_auth_url.rstrip("/")
         child_env["BETTER_AUTH_URL"] = origin
 
-        # Preflight the schema inventory *before* user confirmation.
-        # This ensures unrelated tables are never dropped by DROP SCHEMA CASCADE.
+        # Reject unrelated objects before destructive schema operations.
         api_db = make_url(settings.database_url)
         dsn = api_db.set(drivername="postgresql").render_as_string(hide_password=False)
         with psycopg.connect(dsn) as conn:
@@ -272,8 +264,7 @@ def main() -> None:
             ["npx", "--yes", "auth@latest", "migrate", "--yes", "--config", "./lib/auth.ts"],
             cwd=WEB_DIR, env=child_env,
         )
-        # The auth server MUST NOT be running during database reset/migrations.
-        # Launch it only after both schemas exist and stop it after demo signups.
+        # Start temporary auth only after both schema migrations.
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as logfile:
             process = subprocess.Popen(
                 ["npm", "--workspace", "apps/web", "run", "dev", "--", "--port", "3000"],

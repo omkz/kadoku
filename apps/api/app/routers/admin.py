@@ -1,8 +1,4 @@
-"""Admin-only catalog and order operations.
-
-Access is enforced on *every* endpoint against verified Better Auth JWT IDs.
-No PayPal capture, payment status overrides or hard deletes are exposed here.
-"""
+"""Admin catalog and order operations; no payment capture or hard deletes."""
 from datetime import datetime, timezone
 import re
 
@@ -419,11 +415,7 @@ def update_fulfillment(
     actor: str = Depends(required_admin),
     db: Session = Depends(get_db),
 ):
-    """Explicit step-by-step physical operations, independent of payment state.
-
-    Lock order row in Postgres so two admins cannot advance the same state at
-    once. The expected status is also checked to reject stale UI submissions.
-    """
+    """Advance fulfillment with row locking and expected-state checks."""
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(404, "Order not found")
@@ -464,11 +456,7 @@ def customers(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Admin-only buyer list. Names/emails come from Better Auth, not orders.
-
-    Only registered buyers with orders are included. Guest orders are excluded.
-    Never return shipping addresses, provider IDs or raw auth user IDs.
-    """
+    """List registered buyers with orders; exclude sensitive payment data."""
     total = db.scalar(
         select(func.count(func.distinct(Order.user_id)))
         .where(Order.user_id.is_not(None))
@@ -493,9 +481,7 @@ def customers(
         .limit(page_size)
     ).all()
 
-    # Better Auth owns the "user" table; keep its schema separate from
-    # Kadoku's Alembic ORM models. Parameterized batch lookup avoids N+1
-    # queries and never exposes authentication secrets.
+    # Better Auth owns the user table; query it in batches without auth secrets.
     identities = {}
     if rows:
         ids = [user_id for user_id, *_ in rows]

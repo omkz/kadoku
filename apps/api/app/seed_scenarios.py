@@ -1,8 +1,6 @@
-"""Explicit demo scenarios for Orders, Analytics, and optional My People.
+"""Generate fictional orders and recipients, never PayPal captures.
 
-Creates *synthetic* orders, not PayPal Sandbox captures. Local development is
-the default; a dedicated staging opt-in requires independent guardrails.
-Never use with a production/payment-live database.
+Local by default; remote staging writes require explicit safeguards.
 """
 from __future__ import annotations
 
@@ -19,7 +17,6 @@ from app.db.session import SessionLocal
 from app.models import Occasion, Order, Product, Recipient
 
 
-# Exercise 7/30/90-day analytics and a realistic mix of payment states.
 DAYS_AGO = (
     0, 1, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 32, 35,
@@ -41,7 +38,6 @@ DEMO_SHIPPING = {
     "phone_country_code": None,
     "phone_number": None,
 }
-# Dates are derived from the seed date once, then left alone on reruns.
 DEMO_PEOPLE = (
     ("Mom", "mother", ["cooking", "tea"], 18),
     ("Demo Alex", "friend", ["coffee", "books"], 7),
@@ -63,12 +59,7 @@ def _ensure_demo_target(
     expected_db_host: str | None = None,
     expected_db_name: str | None = None,
 ) -> None:
-    """Do not trust a command-line switch alone to authorize remote writes.
-
-    Every caller, including programmatic callers, goes through these checks.
-    Staging requires both opt-in environment variables and an exact database
-    host/name match. These are trusted-operator CLI helpers, never HTTP routes.
-    """
+    """Verify staging opt-ins and exact DB target, even for direct calls."""
     settings = get_settings()
     if settings.paypal_mode != "sandbox":
         raise RuntimeError("Demo scenario seed requires PAYPAL_MODE=sandbox")
@@ -111,14 +102,9 @@ def seed_demo_scenarios(
     expected_db_host: str | None = None, expected_db_name: str | None = None,
     commit: bool = True,
 ) -> dict[str, int]:
-    """Insert only missing deterministic fixtures; never update existing rows.
+    """Seed deterministic orders and people, with optional test-user ownership.
 
-    Default orders are anonymous (visible in admin, not My Orders). Passing a
-    Better Auth test-account subject scopes a separate order set to that user
-    and adds example people/moments for the account. When buyer_user_ids is
-    supplied, 38 orders are distributed across those distinct customer accounts
-    and My People remains owned by user_id. Existing seeded orders originally
-    owned by user_id are reallocated in place, without duplicating them.
+    Reallocate only previously seeded orders when buyers are specified.
     """
     _ensure_demo_target(
         db, target=target, expected_db_host=expected_db_host,
@@ -159,8 +145,7 @@ def seed_demo_scenarios(
         product = products[index % len(products)]
         status = STATUS_CYCLE[index % len(STATUS_CYCLE)]
         paid = status == "paid"
-        # Count paid entries, rather than all statuses, so every fulfillment
-        # phase (including delivered) is represented in the sample orders.
+        # Fulfillment examples advance only for paid orders.
         paid_ordinal = sum(
             STATUS_CYCLE[slot % len(STATUS_CYCLE)] == "paid"
             for slot in range(index + 1)
