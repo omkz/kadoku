@@ -14,7 +14,6 @@ from app.db.session import get_db
 
 @lru_cache(maxsize=4)
 def _jwks_client(issuer: str) -> PyJWKClient:
-    # Reuse the client so JWKS cache/rotation handling is effective per process.
     return PyJWKClient(f"{issuer}/api/auth/jwks", lifespan=300)
 
 
@@ -53,12 +52,7 @@ def required_user(user_id: str | None = Depends(optional_user)) -> str:
 
 
 def _current_role(db: Session, user_id: str) -> str | None:
-    """Read Better Auth role server-side, never from the browser or JWT claims.
-
-    Admin plugin stores one of our three mutually exclusive application roles.
-    Unknown, missing and multi-role values fail closed. A banned account is
-    denied immediately, even if an older JWT remains cryptographically valid.
-    """
+    """Read current DB role and ban status; never trust stale JWT role claims."""
     try:
         row = db.execute(
             text('SELECT role, banned FROM "user" WHERE id = :id'),
