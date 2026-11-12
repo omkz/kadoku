@@ -23,18 +23,48 @@ class PayPalClient:
         r.raise_for_status()
         return r.json()["access_token"]
 
-    async def _post(self, path: str, payload: dict, request_id: str | None = None) -> dict:
+    async def _post(self, path: str, payload: dict, request_id: str | None = None,
+                    *, representation: bool = False) -> dict:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 token = await self._token(client)
                 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
                 if request_id:
                     headers["PayPal-Request-Id"] = request_id
+                if representation:
+                    headers["Prefer"] = "return=representation"
                 r = await client.post(self.base + path, json=payload, headers=headers)
                 r.raise_for_status()
                 return r.json()
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             raise HTTPException(502, "PayPal Sandbox request failed") from exc
+
+    async def _get(self, path: str) -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                token = await self._token(client)
+                response = await client.get(
+                    self.base + path, headers={"Authorization": f"Bearer {token}"}
+                )
+                response.raise_for_status()
+                return response.json()
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            raise HTTPException(502, "PayPal Sandbox request failed") from exc
+
+    async def get_order(self, paypal_id: str) -> dict:
+        return await self._get(f"/v2/checkout/orders/{paypal_id}")
+
+    async def get_refund(self, refund_id: str) -> dict:
+        return await self._get(f"/v2/payments/refunds/{refund_id}")
+
+    async def refund_capture(self, capture_id: str, amount_minor: int,
+                             currency: str, request_key: str) -> dict:
+        return await self._post(
+            f"/v2/payments/captures/{capture_id}/refund",
+            {"amount": {"currency_code": currency,
+                        "value": f"{amount_minor // 100}.{amount_minor % 100:02d}"}},
+            request_id=f"refund-{request_key}", representation=True,
+        )
 
     async def create_order(self, local_id: str, amount_minor: int) -> dict:
         url = self.settings.frontend_url.rstrip("/")
