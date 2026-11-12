@@ -54,6 +54,8 @@ def _provider_key(model: str) -> str | None:
         return (settings.gemini_api_key or settings.google_api_key).strip()
     if model.startswith("openai/"):
         return settings.openai_api_key.strip()
+    if model.startswith("groq/"):
+        return settings.groq_api_key.strip()
     # Other LiteLLM providers may use different credentials and conventions.
     return None
 
@@ -62,7 +64,7 @@ def _enabled() -> bool:
     if not get_settings().studio_agent_enabled or not _configured_model():
         return False
     model = _configured_model()
-    if model.startswith(("gemini/", "openai/")):
+    if model.startswith(("gemini/", "openai/", "groq/")):
         return bool(_provider_key(model))
     return True
 
@@ -76,7 +78,8 @@ def _safe_provider_error(exc: Exception, model: str) -> tuple[int, str]:
     status = getattr(exc, "status_code", None)
     code = status if isinstance(status, int) else None
     kind = type(exc).__name__.lower()
-    provider = "Gemini" if model.startswith("gemini/") else "LLM"
+    provider = ("Gemini" if model.startswith("gemini/") else
+                "Groq" if model.startswith("groq/") else "LLM")
 
     if code == 401 or "authenticationerror" in kind:
         return 502, f"{provider} authentication failed. Check the API key in apps/api/.env."
@@ -322,6 +325,8 @@ async def turn(
             raise HTTPException(503, "Gemini API key is missing from apps/api/.env")
         if get_settings().studio_agent_enabled and model.startswith("openai/"):
             raise HTTPException(503, "OpenAI API key is missing from apps/api/.env")
+        if get_settings().studio_agent_enabled and model.startswith("groq/"):
+            raise HTTPException(503, "Groq API key is missing from apps/api/.env")
         raise HTTPException(503, "Studio AI is not configured on the server")
     # Cap decoded JSON too, since request body may be decompressed by an upstream
     # reverse proxy and content-length cannot be trusted.
