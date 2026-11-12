@@ -7,6 +7,7 @@ It never accepts URLs, executes tools, or exposes a provider credential.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -23,6 +24,8 @@ from app.core.config import get_settings
 from app.studio_diagnostics import _exception_types
 
 logger = logging.getLogger(__name__)
+_provider_pace_lock = asyncio.Lock()
+_last_provider_start: float | None = None
 router = APIRouter(prefix="/api/v1/admin/analytics/agent", tags=["admin-ai"])
 SAFE_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$")
 MAX_PAYLOAD_BYTES = 600_000
@@ -258,6 +261,26 @@ def _tools_and_choice(turn: StudioTurn) -> tuple[list[dict[str, Any]], Any]:
     return tools, "auto"
 
 
+async def _pace_provider_call() -> None:
+    """Space requests to respect low free-tier RPM limits.
+
+    Per-process only: use a shared rate limiter for multi-worker deployment.
+    The delay happens before a provider call and does not automatically retry
+    quota errors (in particular it cannot fix a daily request limit).
+    """
+    global _last_provider_start
+    interval = get_settings().studio_agent_min_interval_seconds
+    if interval <= 0:
+        return
+    async with _provider_pace_lock:
+        now = time.monotonic()
+        if _last_provider_start is not None:
+            delay = interval - (now - _last_provider_start)
+            if delay > 0:
+                await asyncio.sleep(delay)
+        _last_provider_start = time.monotonic()
+
+
 async def _provider_completion(**kwargs: Any) -> Any:
     try:
         from litellm import acompletion
@@ -338,6 +361,7 @@ async def turn(
     if not tools and payload.responseFormat and payload.responseFormat.get("type") != "text":
         kwargs["response_format"] = {"type": "json_object"}
     try:
+        await _pace_provider_call()
         result = await _provider_completion(**kwargs)
     except HTTPException:
         raise
