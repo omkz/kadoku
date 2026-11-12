@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Kadoku — Thoughtful gifts, made easy",
-  description: "The AI gift companion that helps you find the right gift without the guesswork.",
+  description: "Your AI Gift Concierge. Find thoughtful gifts through conversation, not endless browsing.",
   applicationName: "Kadoku",
   manifest: "/manifest.webmanifest",
   icons: {icon: "/logo.svg"},
