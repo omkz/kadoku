@@ -54,7 +54,7 @@ the API service.
 6. Seed **the same fixture data as local**, without resetting. Export
    test-only credentials only in the interactive Shell session, not in
    Render environment settings or source control. Choose separate passwords
-   of at least 16 characters. The following prompts hide password input:
+   of at least 12 characters. The following prompts hide password input:
 
    ```bash
    export STAGING_DEMO_SEED_ENABLED=true
