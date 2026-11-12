@@ -21,8 +21,7 @@ SAMPLES = [
 ]
 
 
-# Curated demo illustrations. Files live in apps/web/public/products/.
-# They are generated concept images, not supplier photos or actual inventory.
+# Generated illustrations, not supplier photos or inventory.
 IMAGE_URLS = {
     "Garden Lover's Box": "/products/garden-lovers-box.webp",
     "Artisan Coffee Ritual": "/products/artisan-coffee-ritual.webp",
@@ -33,16 +32,9 @@ IMAGE_URLS = {
 
 
 def seed(db):
-    """Idempotently add missing demo products without changing existing rows.
+    """Add missing demo products without changing existing rows.
 
-    An existing 12-item database grows by 88 products. Products from the
-    original catalog retain their IDs, prices, images, stock and order links.
-    Extra demo entries use stable UUID5 IDs so renaming an existing row does
-    not cause it to be reinserted on subsequent seed runs.
-
-    The five known studio images are backfilled only when a legacy product
-    has no image URL. New concepts intentionally have image_url=None; the web
-    frontend displays its branded default product illustration.
+    Stable IDs prevent duplicate inserts; existing order links stay intact.
     """
     existing = list(db.scalars(select(Product)).all())
     names = {p.name for p in existing}
@@ -81,7 +73,6 @@ def seed(db):
         ids.add(stable_id)
         added += 1
 
-    # A no-op seed leaves all existing product attributes unchanged.
     db.commit()
     return added
 
