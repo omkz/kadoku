@@ -573,7 +573,7 @@ export default function KadokuApp() {
           <p className="previous-assistant-reply">✦ Kadoku · {turn.summary}</p>
         </div>)}
         <div className="user-bubble">{conversation[conversation.length-1]?.text}</div>
-        <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"I found a few thoughtful ideas."} {(response?.recommendations.length||0)>0?"Here’s the one I’d pick.":""}</p></div></div>
+        <div className="assistant-note"><span className="ai-sparkle">✦</span><div><b>Kadoku</b><p>{response?.summary||"Tell me a little about who you're shopping for."}</p></div></div>
         {busy && <p className="gift-loading" role="status" aria-live="polite">Updating gift ideas…</p>}
         {(response?.recommendations.length ?? 0) > 0 ? <div className="gift-carousel">
           <div ref={giftScroller} className="gift-scroller" aria-label="Gift recommendations"
@@ -593,9 +593,9 @@ export default function KadokuApp() {
           {giftNavigation.right && <button type="button" className="gift-carousel-arrow gift-carousel-next"
             aria-label="Next gift" onClick={()=>moveGiftCarousel(1)}>›</button>}
         </div> : <div className="empty-profile gift-empty" role="status">
-          <p>No gifts match all those preferences right now.</p>
+          <p>{response?.clarification ? "Tell me a little more to find your gift." : "No gifts match all those preferences right now."}</p>
           {canRefine
-            ? <button type="button" className="primary-action" onClick={()=>refineInput.current?.focus()}>Adjust gift request</button>
+            ? <button type="button" className="primary-action" onClick={()=>refineInput.current?.focus()}>{response?.clarification ? "Answer Kadoku" : "Adjust gift request"}</button>
             : <button type="button" className="primary-action" onClick={session?.user ? goHome : ()=>{setCheckoutAfterLogin(false);setShowAuth(true);}}>
                 {session?.user ? "Back to home" : "Sign in for more ideas"}
               </button>}
@@ -605,12 +605,12 @@ export default function KadokuApp() {
             <span className="swipe-mobile">← Swipe to see all {response?.recommendations.length||0} ideas →</span>
             <span className="swipe-desktop">Use the arrows or trackpad to see all {response?.recommendations.length||0} ideas</span>
           </p>}
-        <div className="assistant-followup"><span>✦</span><p>Not quite right? Tell me what to change. I remember the details from this chat.</p></div>
-        {canRefine && <div className="refine-suggestions">
+        {(response?.recommendations.length ?? 0)>0 && <div className="assistant-followup"><span>✦</span><p>Not quite right? Tell me what to change. I remember the details from this chat.</p></div>}
+        {canRefine && (response?.recommendations.length ?? 0)>0 && <div className="refine-suggestions">
           <button disabled={busy} onClick={()=>void findGifts("Make it cheaper")}>More affordable</button>
           <button disabled={busy} onClick={()=>void findGifts("Something more personal")}>More personal</button>
         </div>}
-        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder={canRefine ? "Something more personal, perhaps?" : "Daily recommendation limit reached"} value={prompt} disabled={busy || !canRefine} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy || !canRefine} onClick={speak} aria-label={listening?"Stop voice input":"Voice input"}><MicrophoneIcon/></button><button disabled={busy || !canRefine} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
+        <div className="refine-box"><input ref={refineInput} aria-label="Refine your request" placeholder={canRefine ? (response?.clarification ? "Tell me a little more…" : "Something more personal, perhaps?") : "Daily recommendation limit reached"} value={prompt} disabled={busy || !canRefine} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter") {e.preventDefault();void findGifts();}}}/><button disabled={busy || !canRefine} onClick={speak} aria-label={listening?"Stop voice input":"Voice input"}><MicrophoneIcon/></button><button disabled={busy || !canRefine} onClick={()=>void findGifts()} aria-label={busy?"Updating recommendations":"Refine recommendations"}>{busy?"…":"↑"}</button></div>
         <p className="demo-note">{response?.notice} {response?.remaining_today===0?"You've used your recommendation quota for today.":`${response?.remaining_today} recommendations left today.`}</p>
       </main>}
       {screen==="details" && gift && <main className="details-screen page-enter">
