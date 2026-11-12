@@ -1,6 +1,6 @@
 # Kadoku
 
-**Thoughtful gifts, made easy.** A mobile-first AI gifting companion that recommends a small set of curated products from a **shop-owned** catalog.
+**Your AI Gift Concierge.** Thoughtful gifts, made easy. A mobile-first, conversation-first gift-shopping experience that highlights one top pick from a **shop-owned** catalog, with alternatives when needed.
 
 **Status:** Functional foundation / non-production MVP. This repository is intended for iterative product development. It is **not** a live store and cannot fulfill real orders.
 
