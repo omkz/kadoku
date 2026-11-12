@@ -38,7 +38,7 @@ Optionally register `/api/v1/webhooks/paypal` on a public HTTPS endpoint and set
 
 If the capture callback loses its response, Kadoku checks PayPal's order status before reporting failure. Checkout cancellation also checks PayPal first and cannot silently cancel an already captured payment. A signed-in buyer can retry via `POST /api/v1/orders/{id}/reconcile`. Admins can check `POST /api/v1/admin/orders/{id}/reconcile`; neither endpoint initiates a new charge.
 
-A `super_admin` can issue a full or partial Sandbox refund through the API docs:
+A `super_admin` can issue a full or partial refund in **Admin → Orders → Details**. Enter USD amount, confirm, then check the refund history. Pending/uncertain requests must be retried from the same order rather than starting a new refund. The API is also available:
 
 ```http
 POST /api/v1/admin/orders/{id}/refund
