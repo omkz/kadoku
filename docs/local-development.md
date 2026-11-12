@@ -2,17 +2,17 @@
 
 Start with the [README quick start](../README.md#run-locally). The commands below are for development and test data, not production.
 
-## Database and demo data
+## Optional sample data
 
-After configuring `apps/api/.env`, apply migrations and seed the catalog:
+Run migrations for an empty database, then seed sample products **only if you want demo data**:
 
 ```bash
 cd apps/api
 uv run alembic upgrade head
-uv run python -m app.seed
+uv run python -m app.seed  # Optional: populate the demo catalog
 ```
 
-The catalog contains 100 fictional products with illustrative images and test prices. `app.seed` is idempotent.
+`app.seed` is idempotent and adds 100 fictional products with illustrative images and test prices. Without it, you can manage products through the admin interface. The current Sandbox checkout flow accepts only USD products marked `demo_only`; support for real inventory and PayPal Live is on the roadmap.
 
 To populate admin analytics with fictional orders on a **disposable local database**:
 
@@ -85,6 +85,8 @@ If gift chat fails:
 
 Better Auth migrations and Alembic migrations manage different tables in the same PostgreSQL database.
 
-## Sandbox boundaries
+## Payment environments
 
-No real payments, shipping, supplier inventory, or customer fulfillment are supported. Seeded payments are fictional; Sandbox captures are test transactions, not revenue. Before any live-commerce launch, add supplier verification, tax/shipping quotes, stock reservations, refunds, fraud controls, email verification, privacy review, and monitoring.
+PayPal Sandbox is the currently implemented payment environment; changing `PAYPAL_MODE` to `live` does **not** activate live checkout. The payment client and checkout validation deliberately reject live mode. Sample orders are fictional, and Sandbox captures are test transactions, not revenue.
+
+PayPal Live and real-order fulfillment are planned after supplier integration, tax/shipping quotes, stock reservations, refunds, reconciliation, fraud controls, and production security review.
