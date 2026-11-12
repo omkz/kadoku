@@ -264,3 +264,68 @@ def test_refund_client_uses_cents_idempotency_and_full_representation():
     paypal._get = fake_get
     assert asyncio.run(paypal.get_order("PAYPAL-ORDER-A"))["id"] == "PAYPAL-ORDER-A"
     assert calls[-1] == ("get", "/v2/checkout/orders/PAYPAL-ORDER-A")
+
+
+def test_cancel_checks_paypal_status_before_marking_cancelled(
+        client, database, token_factory, monkeypatch):
+    order_id = make_order(database, status="approval_pending")
+    calls = []
+    class FakePayPal:
+        async def get_order(self, paypal_id):
+            calls.append(paypal_id)
+            return payment_order(order_id, status="APPROVED")
+    monkeypatch.setattr("app.routers.checkout.PayPalClient", FakePayPal)
+    url = f"/api/v1/orders/{order_id}/cancel"
+    response = client.post(url, headers=bearer(token_factory))
+    assert response.status_code == 200, response.text
+    assert response.json() == {"order_id": order_id, "status": "cancelled"}
+    assert client.post(url, headers=bearer(token_factory)).status_code == 200
+    assert calls == ["PAYPAL-ORDER-A"]
+    with database() as db:
+        assert db.get(Order, order_id).status == "cancelled"
+    # Once cancelled, this endpoint must not initiate a capture.
+    capture = client.post("/api/v1/checkout/paypal/capture", json={
+        "order_id": order_id, "paypal_order_id": "PAYPAL-ORDER-A",
+    }, headers=bearer(token_factory))
+    assert capture.status_code == 409
+
+
+def test_cancel_recovers_already_captured_payment(
+        client, database, token_factory, monkeypatch):
+    order_id = make_order(database, status="approval_pending")
+    class FakePayPal:
+        async def get_order(self, _):
+            return payment_order(order_id)
+    monkeypatch.setattr("app.routers.checkout.PayPalClient", FakePayPal)
+    response = client.post(
+        f"/api/v1/orders/{order_id}/cancel", headers=bearer(token_factory)
+    )
+    assert response.status_code == 409
+    with database() as db:
+        order = db.get(Order, order_id)
+        assert order.status == "paid"
+        assert order.paypal_capture_id == "CAP-A"
+
+
+@pytest.mark.parametrize("change", [
+    lambda payload: payload.update(id="UNRELATED"),
+    lambda payload: payload["purchase_units"][0].update(custom_id="ANOTHER-ORDER"),
+    lambda payload: payload["purchase_units"][0]["payments"]["captures"][0].update(
+        amount=paypal_amount(6700)
+    ),
+])
+def test_cancel_cannot_hide_provider_mismatch(
+        client, database, token_factory, monkeypatch, change):
+    order_id = make_order(database, status="approval_pending")
+    data = payment_order(order_id)
+    change(data)
+    class FakePayPal:
+        async def get_order(self, _):
+            return data
+    monkeypatch.setattr("app.routers.checkout.PayPalClient", FakePayPal)
+    response = client.post(
+        f"/api/v1/orders/{order_id}/cancel", headers=bearer(token_factory)
+    )
+    assert response.status_code in (409, 502)
+    with database() as db:
+        assert db.get(Order, order_id).status == "approval_pending"
