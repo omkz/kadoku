@@ -24,9 +24,7 @@ async def extract_intent_json(prompt: str, model: str, *, timeout_seconds: float
     from litellm import acompletion  # optional project extra [ai]
     from app.core.config import get_settings
 
-    # pydantic-settings reads apps/api/.env without exporting values to the
-    # process environment. Pass credentials explicitly to LiteLLM so local
-    # configuration works even when the key is not also exported in the shell.
+    # Pydantic .env keys are not exported; pass them explicitly to LiteLLM.
     settings = get_settings()
     provider = model.split("/", 1)[0].lower()
     if provider == "gemini":
