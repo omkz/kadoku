@@ -4,6 +4,7 @@
 - **Dependency direction:** HTTP routers → application/business services → repositories → SQLAlchemy → PostgreSQL.
 - **External integrations:** PayPal client and LiteLLM use their own adapters. Business services do not have direct knowledge of HTTP request state or provider secrets.
 - **User identity:** Better Auth session in Next.js → signed JWT via its JWT plugin → FastAPI validates issuer, audience and JWKS public signing key → private recipient queries filter by `user_id`.
+- **Admin authorization:** Better Auth Admin plugin stores a single `user`, `admin`, or `super_admin` role. FastAPI verifies the signed JWT and reads the current role and ban status from Better Auth's database for each admin request; see [admin roles](admin-roles.md).
 - **Guest identity:** Next.js creates an HttpOnly signed guest cookie and FastAPI validates its HMAC before quota attribution. This is product friction control, not a complete bot defense.
 - **Gift selection:** LLM or deterministic parser extracts intent; hard stock/budget/exclusion filtering; weighted metadata ranking; category diversity; up to 3 product cards with grounded reasons.
 - **PayPal:** Sandbox only. API creates a local order, then PayPal order, redirects the user to approval, and captures after return. Capture payload must be completed with matching price and currency; webhook events are signature-verified and deduplicated. Full reconciliation and refund automation are future work.

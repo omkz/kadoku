@@ -4,11 +4,12 @@ import {useCallback, useEffect, useRef, useState, type FormEvent} from "react";
 import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 import dynamic from "next/dynamic";
+import AdminTeam from "./AdminTeam";
 
 // AG Studio runs in the browser; never server-render its DOM-bound engine.
 const AdminAnalytics = dynamic(()=>import("./AdminAnalytics"), {ssr:false});
 
-type Section = "overview" | "analytics" | "products" | "orders" | "customers" | "settings";
+type Section = "overview" | "analytics" | "products" | "orders" | "customers" | "team" | "settings";
 type Access = "checking" | "allowed" | "denied" | "signed-out" | "error";
 
 type Overview = {
@@ -62,6 +63,8 @@ const nextFulfillment: Record<string,string> = {
 };
 type AdminCustomer = {
   buyer_ref: string;
+  name: string | null;
+  email: string | null;
   orders_total: number;
   paid_orders: number;
   sandbox_paid_minor: number;
@@ -94,6 +97,7 @@ const sections: {id:Section;label:string;symbol:string}[] = [
   {id:"products", label:"Products", symbol:"▦"},
   {id:"orders", label:"Orders", symbol:"▤"},
   {id:"customers", label:"Customers", symbol:"♙"},
+  {id:"team", label:"Team", symbol:"♧"},
   {id:"settings", label:"Settings", symbol:"⚙"},
 ];
 
@@ -385,7 +389,7 @@ export default function AdminDashboard() {
       <a className="admin-logo" href="/" aria-label="Kadoku storefront"><span aria-hidden="true">✦</span><span className="admin-logo-word">kadoku<span className="admin-logo-dot">.</span></span></a>
       <p className="admin-sidebar-label">STORE MANAGEMENT</p>
       <nav aria-label="Admin dashboard">
-        {sections.map(item=><button type="button" key={item.id}
+        {sections.filter(item=>item.id!=="team" || (session?.user as {role?:string}|undefined)?.role==="super_admin").map(item=><button type="button" key={item.id}
           className={"admin-nav-button " + (section===item.id ? "is-active" : "")}
           aria-current={section===item.id ? "page" : undefined}
           title={item.label}
@@ -399,6 +403,7 @@ export default function AdminDashboard() {
       </div>
     </aside>
     <main className="admin-main">
+      {section==="team" && (session?.user as {role?:string}|undefined)?.role==="super_admin" && session?.user?.id && <AdminTeam currentUserId={session.user.id}/> }
       <div className="admin-topline">
         <div className="admin-topline-start">
           {section==="analytics" && <button type="button" className="admin-sidebar-toggle"
@@ -422,7 +427,7 @@ export default function AdminDashboard() {
           <div className="admin-stat"><span>Products</span><strong>{overview.products_total}</strong><small>{overview.products_active} active · {overview.products_out_of_stock} out of stock</small></div>
           <div className="admin-stat"><span>Awaiting processing</span><strong>{overview.awaiting_fulfillment}</strong><small>Paid, not yet processed</small></div>
           <div className="admin-stat"><span>Orders</span><strong>{overview.orders_total}</strong><small>{overview.orders_paid} marked paid</small></div>
-          <div className="admin-stat"><span>Sandbox captured amount</span><strong>{dollars(overview.sandbox_paid_minor)}</strong><small>Test payments, not revenue</small></div>
+          <div className="admin-stat"><span>Sandbox captured · All time</span><strong>{dollars(overview.sandbox_paid_minor)}</strong><small>Test payments, not revenue</small></div>
         </div>}
         <div className="admin-info">
           <div className="admin-info-icon">✳</div>
@@ -564,9 +569,10 @@ export default function AdminDashboard() {
           {customersError && <p className="admin-error" role="alert">{customersError}</p>}
           {customersBusy && <p className="admin-loading" role="status">Loading buyer activity…</p>}
           {customers && <><div className="admin-table-scroll"><table className="admin-table">
-            <thead><tr><th>Buyer ref</th><th>Orders</th><th>Paid</th><th>Sandbox captured</th><th>Last order</th></tr></thead>
+            <thead><tr><th>Customer</th><th>Email</th><th>Orders</th><th>Paid</th><th>Total spent (Sandbox)</th><th>Last order</th></tr></thead>
             <tbody>{customers.items.map(buyer=><tr key={buyer.buyer_ref}>
-              <td className="admin-mono">{buyer.buyer_ref}</td>
+              <td>{buyer.name ?? "Account unavailable"}</td>
+              <td>{buyer.email ?? "—"}</td>
               <td>{buyer.orders_total}</td><td>{buyer.paid_orders}</td>
               <td className="admin-no-wrap">{dollars(buyer.sandbox_paid_minor)}</td>
               <td className="admin-no-wrap">{dateLabel(buyer.latest_order_at)}</td>
@@ -578,7 +584,7 @@ export default function AdminDashboard() {
             <button type="button" className="admin-outline" disabled={customersPage*pageSize>=customers.total||customersBusy} onClick={()=>setCustomersPage(p=>p+1)}>Next</button>
           </div></div></>}
         </div>
-        <p className="admin-disclaimer">Guest checkout records cannot be reliably assigned to an individual customer. This view deliberately omits emails, addresses and PayPal identifiers.</p>
+        <p className="admin-disclaimer">Names and emails are visible to authorized admins only. Guest checkouts are excluded; shipping details, payment identifiers and account credentials are never shown. Sandbox totals are test payments, not revenue.</p>
       </>}
       {section==="settings" && <>
         <div className="admin-section-heading"><div><p className="admin-overline">STORE CONFIGURATION</p><h1>Settings</h1><p>Environment, access control and catalog policy.</p></div></div>

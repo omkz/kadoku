@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.core.config import get_settings
 from app.models import Order, Product
 
 
@@ -13,12 +12,11 @@ def auth_headers(token_factory, subject="test-user-a"):
 
 
 def test_analytics_fails_closed_and_validates_window(
-    client, token_factory, monkeypatch,
-):
+    client, token_factory, monkeypatch, set_auth_role):
     path = "/api/v1/admin/analytics"
     assert client.get(path).status_code == 401
     assert client.get(path, headers=auth_headers(token_factory)).status_code == 403
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    set_auth_role("test-user-a", "admin")
     h = auth_headers(token_factory)
     assert client.get(path + "?days=0", headers=h).status_code == 422
     assert client.get(path + "?days=3650", headers=h).status_code == 422
@@ -34,9 +32,8 @@ def test_analytics_fails_closed_and_validates_window(
 
 
 def test_analytics_aggregates_sandbox_payments_without_exposing_pii(
-    client, database, token_factory, monkeypatch,
-):
-    monkeypatch.setattr(get_settings(), "admin_user_ids", "test-user-a")
+    client, database, token_factory, monkeypatch, set_auth_role):
+    set_auth_role("test-user-a", "admin")
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         now = datetime.now(timezone.utc)

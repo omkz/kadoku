@@ -8,7 +8,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import bindparam, case, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.auth import required_admin
@@ -241,8 +241,10 @@ class AdminOrderDetail(AdminOrderOut):
 
 
 class AdminCustomerOut(BaseModel):
-    """Only buyers with orders; deliberately excludes account emails and addresses."""
+    """Order-linked buyers, with minimal identity data for authorized admins."""
     buyer_ref: str
+    name: str | None
+    email: str | None
     orders_total: int
     paid_orders: int
     sandbox_paid_minor: int
@@ -462,10 +464,10 @@ def customers(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Read-only, order-linked buyer summary (not all registered accounts).
+    """Admin-only buyer list. Names/emails come from Better Auth, not orders.
 
-    Guests cannot be identified uniquely, so they are excluded. Do not return
-    authentication IDs, shipping addresses, PayPal identifiers or emails.
+    Only registered buyers with orders are included. Guest orders are excluded.
+    Never return shipping addresses, provider IDs or raw auth user IDs.
     """
     total = db.scalar(
         select(func.count(func.distinct(Order.user_id)))
@@ -490,10 +492,27 @@ def customers(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+
+    # Better Auth owns the "user" table; keep its schema separate from
+    # Kadoku's Alembic ORM models. Parameterized batch lookup avoids N+1
+    # queries and never exposes authentication secrets.
+    identities = {}
+    if rows:
+        ids = [user_id for user_id, *_ in rows]
+        query = text(
+            'SELECT id, name, email FROM "user" WHERE id IN :ids'
+        ).bindparams(bindparam("ids", expanding=True))
+        identities = {
+            row.id: row
+            for row in db.execute(query, {"ids": ids}).all()
+        }
+
     return CustomerPage(
         items=[
             AdminCustomerOut(
                 buyer_ref="…" + user_id[-8:],
+                name=identities[user_id].name if user_id in identities else None,
+                email=identities[user_id].email if user_id in identities else None,
                 orders_total=orders_total,
                 paid_orders=paid_orders,
                 sandbox_paid_minor=paid_minor,

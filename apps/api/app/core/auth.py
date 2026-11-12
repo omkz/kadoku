@@ -2,10 +2,14 @@
 from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 import jwt
 from jwt import PyJWKClient
 
 from app.core.config import get_settings
+from app.db.session import get_db
 
 
 @lru_cache(maxsize=4)
@@ -48,13 +52,37 @@ def required_user(user_id: str | None = Depends(optional_user)) -> str:
     return user_id
 
 
-def required_admin(user_id: str = Depends(required_user)) -> str:
-    """Only explicitly allowlisted Better Auth account IDs can access admin APIs.
+def _current_role(db: Session, user_id: str) -> str | None:
+    """Read Better Auth role server-side, never from the browser or JWT claims.
 
-    User IDs are taken from a verified, signed JWT subject. No caller-supplied
-    role or email header is trusted. Empty allowlists deny all authenticated users.
+    Admin plugin stores one of our three mutually exclusive application roles.
+    Unknown, missing and multi-role values fail closed. A banned account is
+    denied immediately, even if an older JWT remains cryptographically valid.
     """
-    allowed = {item.strip() for item in get_settings().admin_user_ids.split(",") if item.strip()}
-    if user_id not in allowed:
+    try:
+        row = db.execute(
+            text('SELECT role, banned FROM "user" WHERE id = :id'),
+            {"id": user_id},
+        ).first()
+    except SQLAlchemyError as exc:
+        raise HTTPException(503, "Authorization database unavailable or not migrated") from exc
+    if row is None or row.banned:
+        return None
+    role = row.role or "user"
+    return role if role in ("user", "admin", "super_admin") else None
+
+
+def required_admin(
+    user_id: str = Depends(required_user), db: Session = Depends(get_db),
+) -> str:
+    if _current_role(db, user_id) not in ("admin", "super_admin"):
         raise HTTPException(403, "Administrator access required")
+    return user_id
+
+
+def required_super_admin(
+    user_id: str = Depends(required_user), db: Session = Depends(get_db),
+) -> str:
+    if _current_role(db, user_id) != "super_admin":
+        raise HTTPException(403, "Super administrator access required")
     return user_id

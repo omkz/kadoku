@@ -74,7 +74,7 @@ for exercising the Admin **Orders** and **Analytics** screens:
 - Order amounts snapshot the associated demo product price; no product stock
   is deducted or overwritten.
 - When `--user-id` is supplied, demo orders also appear in that specific
-  test account's **My Orders**; **5 demo recipients** and **4 birthdays** are
+  test account's **My Orders**; **6 demo recipients** and **5 birthdays** are
   added for My People/Upcoming moments. Without `--user-id`, orders are
   anonymous and appear in Admin/Analytics but not any user's My Orders.
 - Stable, deterministic IDs make reruns safe: only missing fixtures are added,
@@ -118,6 +118,14 @@ This release check is for a **demo**, not a production store or real checkout.
 3. Check home → recommendation (including zero-match state) → details → sign-in → PayPal **Sandbox** → return/cancel → My Orders; also verify the saved-person loading/retry state, mobile swipe and desktop arrows in a real browser.
 4. Use real deployment secrets, HTTPS, the correct `BETTER_AUTH_URL`, `FRONTEND_URL`, `CORS_ORIGINS` and database endpoints. `GUEST_COOKIE_SECRET` and `GUEST_QUOTA_SECRET` must match; do not copy the CI placeholder values to deployments. Keep `PAYPAL_MODE=sandbox`; live PayPal is not implemented.
 5. Before making the demo public, review privacy/terms, login security, abuse and AI-cost limits, and what is disclosed about fictional catalog items and non-fulfillment. Passing CI alone **does not** make Kadoku ready for real commerce.
+
+## Render staging (synthetic demo data)
+
+The current Render deployment is staging: it uses PayPal Sandbox and the same
+two-account/100-product/38-order/six-recipient seed as localhost. Ordinary
+deploys run **non-destructive migrations only**, never `app.db reset` or
+`app.db seed`. For controlled staging migration/reset/seed from a trusted
+machine, see [Render staging database runbook](docs/render-staging.md).
 
 ## Local setup (Linux / macOS)
 
@@ -300,6 +308,44 @@ The authenticated Studio Agent endpoint also logs just exception class chain, up
 
 `apps/web/pnpm-lock.yaml` is committed with the matching AG Studio versions. GitHub CI verifies backend tests and the Next.js production build; use `pnpm install --frozen-lockfile` when reproducing the dependency graph.
 
+
+### Rails-style local reset and seed (development only)
+
+Configure `apps/api/.env` and `apps/web/.env` for your local PostgreSQL
+database, then run:
+
+```bash
+cd apps/api
+uv run python -m app.db reset
+uv run python -m app.db seed
+```
+
+- `reset` deletes the local Kadoku public schema and runs Alembic and
+  Better Auth migrations. **All existing local data is lost.**
+- `seed` creates exactly **two Better Auth accounts** on a fresh database:
+  one admin, and one customer. Configure `DEV_ADMIN_EMAIL`,
+  `DEV_ADMIN_PASSWORD`, `DEV_CUSTOMER_NAME`, `DEV_CUSTOMER_EMAIL`
+  and `DEV_CUSTOMER_PASSWORD` in `apps/web/.env`. Passwords require
+  at least eight characters and the two emails must be different.
+- The seed also inserts 100 products and 38 fictional orders, owned
+  **only by the customer**, while Admin Customers shows one buyer.
+- The customer's **My People** includes Mom, Alex, Morgan, Taylor,
+  Casey, and Jordan, with five birthday records. Recipients are not
+  customer accounts; the admin has no seeded orders or recipients.
+- Better Auth hashes passwords. Re-running seed does not overwrite
+  existing account passwords. Reset the disposable local database to
+  recreate accounts with changed credentials.
+- Repeated `seed` calls do not create duplicate accounts or fixtures.
+  Existing passwords are not overwritten. On a previously seeded database,
+  older accounts and records are preserved; use `reset` once if you need
+  **exactly two accounts**.
+- The commands are restricted to local PostgreSQL named `kadoku` or
+  `kadoku_test`, environment development/test and PayPal Sandbox.
+  Seeded orders and payment states are fictional, **not PayPal captures**.
+
+If Better Auth tables are missing, repair the existing local DB without
+dropping data using `uv run python -m app.db migrate` before `seed`.
+For a catalog-only update, use `uv run python -m app.seed`.
 
 ### Give an account admin access
 

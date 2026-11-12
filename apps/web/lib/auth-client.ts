@@ -1,7 +1,8 @@
 import { createAuthClient } from "better-auth/react";
-import { jwtClient } from "better-auth/client/plugins";
+import { adminClient, jwtClient } from "better-auth/client/plugins";
+import {ac, roles} from "./auth-roles";
 
-export const authClient = createAuthClient({plugins: [jwtClient()]});
+export const authClient = createAuthClient({plugins: [jwtClient(), adminClient({ac, roles})]});
 
 export async function authHeaders(required = false): Promise<Record<string, string>> {
   try {
