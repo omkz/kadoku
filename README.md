@@ -164,6 +164,48 @@ uv sync --extra ai
 
 Without an AI key, the application still works in **rules-based demo mode**. The LLM is used only for gift-intent extraction; the server independently ranks products, enforces stock and price limits, and returns catalog data. Set `AI_MODEL` (LiteLLM provider/model), install optional AI dependencies with `uv sync --extra ai`, and provide the provider API key. `AI_TIMEOUT_SECONDS` and `AI_MAX_OUTPUT_TOKENS` cap each AI call. Invalid or unavailable model responses fall back to the rule parser; the API response identifies the path with `provider` (`llm`, `rules`, or `rules-fallback`). A model failure does not grant extra guest recommendations.
 
+### Troubleshoot local gift chat / AI
+
+Chat recommendations use `POST /api/v1/gifts/recommendations`. They still
+work without a paid AI key using rule-based intent extraction. To enable
+LLM-powered intent extraction in **localhost**, run from `apps/api`:
+
+```bash
+uv sync --extra ai
+# in apps/api/.env (not apps/web/.env):
+# AI_MODEL=gemini/gemini-2.5-flash
+# GEMINI_API_KEY=<your secret>
+# alternatively: AI_MODEL=openai/<your model>, OPENAI_API_KEY=<your secret>
+# restart uvicorn after editing .env
+```
+
+Do not commit API keys or put them in `NEXT_PUBLIC_*`. To check configuration
+**without printing secrets**:
+
+```bash
+uv run python - <<'PY'
+import importlib.util
+from app.core.config import get_settings
+s=get_settings()
+print("AI_MODEL:", s.ai_model or "(empty: rules only)")
+print("LiteLLM installed:", importlib.util.find_spec("litellm") is not None)
+print("Provider key configured:", bool(s.gemini_api_key or s.google_api_key or s.openai_api_key))
+PY
+```
+
+The response field `provider` is `llm` for a successful extraction,
+`rules` when `AI_MODEL` is empty and `rules-fallback` when a configured LLM
+request fails. An LLM outage does not make the catalog recommender unavailable.
+
+If the request never reaches FastAPI, check that both servers are running and
+`apps/web/.env` has `API_PROXY_TARGET=http://localhost:8000`. Verify
+`http://localhost:3000/backend/api/health` responds with `status: ok`;
+`/api/guest` must also succeed for visitors who are not signed in, and
+`GUEST_COOKIE_SECRET` in the web must match `GUEST_QUOTA_SECRET` in the API.
+Guest recommendations are limited to **one per UTC day**; a 429 response
+means the daily limit has been reached. Signed-in members have a separate
+quota. First messages must contain at least ten characters.
+
 ### 3. Next.js and Better Auth
 
 From the **repository root**, use **pnpm inside the web app**:
