@@ -1,13 +1,4 @@
-"""Kadoku database lifecycle commands for local development and explicit staging.
-
-Run from apps/api:
-    uv run python -m app.db reset
-    uv run python -m app.db seed
-
-Staging requires --target staging, confirmation flags, matching PostgreSQL
-hosts, HTTPS Better Auth origin and operator-only environment variables.
-No reset or demo user seed is part of application startup/deployment.
-"""
+"""Explicit local/staging database commands; never run during deployment."""
 from __future__ import annotations
 
 import argparse
@@ -159,8 +150,7 @@ def _prepare(
         expected_db_name=expected_db_name, expected_auth_host=expected_auth_host,
     )
     if target == "staging":
-        # The Render API service contains only apps/api (Python), not apps/web.
-        # Better Auth provisioning goes via the deployed HTTPS web API.
+        # Render API has no Next.js workspace; use the deployed Better Auth API.
         return name, {}
     env = _web_seed_env(
         target, name, expected_db_host=expected_db_host,
@@ -213,8 +203,7 @@ def reset(
     url = make_url(get_settings().database_url)
     dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
     engine.dispose()
-    # Validate the live connection and reject any unexpected objects before
-    # dropping the public schema. Both DDL statements are transactional.
+    # Refuse unknown DB objects before transactional schema reset.
     with psycopg.connect(dsn) as conn:
         actual = conn.execute("SELECT current_database()").fetchone()[0]
         if actual != name:
@@ -281,7 +270,6 @@ def seed_all(
     if target == "staging" and os.environ.get("STAGING_DEMO_SEED_ENABLED") != "true":
         raise RuntimeError("Staging seed requires STAGING_DEMO_SEED_ENABLED=true.")
     if target == "staging":
-        # All Render operations stay inside the API service and private DB.
         _run(sys.executable, "-m", "alembic", "upgrade", "head")
         _verify_auth_schema()
         accounts = _staging_accounts()
