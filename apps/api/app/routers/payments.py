@@ -1,4 +1,5 @@
 """Sandbox payment recovery and admin refund operations."""
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
@@ -45,7 +46,7 @@ def checked_refund(data: dict, amount_minor: int, currency: str) -> tuple[str, s
     refund_id, status, amount = data.get("id"), data.get("status"), data.get("amount")
     if not isinstance(refund_id, str) or not (1 <= len(refund_id) <= 64):
         raise HTTPException(502, "Missing PayPal refund reference")
-    if status not in ("PENDING", "COMPLETED", "FAILED"):
+    if status not in ("PENDING", "COMPLETED", "FAILED", "CANCELLED"):
         raise HTTPException(502, "Unexpected PayPal refund status")
     if not isinstance(amount, dict) or amount.get("currency_code") != currency:
         raise HTTPException(502, "PayPal refund currency mismatch")
@@ -55,7 +56,7 @@ def checked_refund(data: dict, amount_minor: int, currency: str) -> tuple[str, s
         raise HTTPException(502, "Invalid PayPal refund amount") from exc
     if not cents.is_finite() or cents != amount_minor:
         raise HTTPException(502, "PayPal refund amount mismatch")
-    return refund_id, status.lower()
+    return refund_id, "failed" if status in ("FAILED", "CANCELLED") else status.lower()
 
 
 def completed_refunds(db: Session, order_id: str) -> int:
@@ -142,7 +143,7 @@ def list_refunds(order_id: str, _: str = Depends(required_admin),
 
 @router.post("/admin/orders/{order_id}/refund", response_model=RefundOut)
 async def refund_order(order_id: str, payload: RefundRequest,
-                       _: str = Depends(required_super_admin),
+                       actor: str = Depends(required_super_admin),
                        db: Session = Depends(get_db)):
     """Refund a Sandbox capture, keyed for safe retries after timeouts."""
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
@@ -158,6 +159,12 @@ async def refund_order(order_id: str, payload: RefundRequest,
         raise HTTPException(409, "Request key was already used for a different amount")
     if existing and existing.status != "pending":
         return refund_out(existing)
+    if existing and not existing.paypal_refund_id and existing.created_at:
+        started = existing.created_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - started > timedelta(days=30):
+            raise HTTPException(409, "Refund outcome needs manual PayPal review")
     if order.status not in ("paid", "partially_refunded"):
         raise HTTPException(409, "Order is not eligible for a refund")
     if order.fulfillment_status != "unfulfilled":
@@ -172,7 +179,8 @@ async def refund_order(order_id: str, payload: RefundRequest,
             raise HTTPException(409, "Refund exceeds remaining captured amount")
     paypal = PayPalClient()
     refund = existing or PaymentRefund(
-        order_id=order.id, request_key=request_key, amount_minor=payload.amount_minor,
+        order_id=order.id, request_key=request_key, actor_user_id=actor,
+        amount_minor=payload.amount_minor,
         currency=order.currency, status="pending",
     )
     if not existing:
