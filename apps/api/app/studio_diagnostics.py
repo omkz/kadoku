@@ -56,8 +56,10 @@ async def run() -> int:
         provider_key = (settings.gemini_api_key or settings.google_api_key).strip()
     elif model.startswith("openai/"):
         provider_key = settings.openai_api_key.strip()
+    elif model.startswith("groq/"):
+        provider_key = settings.groq_api_key.strip()
     else:
-        print("Model prefix is unsupported by this diagnostic. Set STUDIO_AGENT_MODEL=gemini/<model>.")
+        print("Model prefix is unsupported by this diagnostic. Set STUDIO_AGENT_MODEL=gemini/<model> or groq/<model>.")
         return 2
     if not model or not provider_key:
         print("Studio model or provider key is missing from apps/api/.env.")
