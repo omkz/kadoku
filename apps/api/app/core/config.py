@@ -20,9 +20,7 @@ class Settings(BaseSettings):
     studio_agent_enabled: bool = False  # explicit opt-in for admin AI actions
     studio_agent_model: str = ""  # fallback to AI_MODEL when unset; Gemini via LiteLLM
     studio_agent_min_interval_seconds: float = Field(default=0, ge=0, le=60)  # per-process pacing; set 15 for a 5 RPM model
-    # Declare provider credentials so pydantic-settings loads them from apps/api/.env.
-    # Values are passed to LiteLLM explicitly; BaseSettings does not export .env
-    # variables into os.environ for the SDK to discover automatically.
+    # Pydantic loads .env keys but does not export them to LiteLLM.
     gemini_api_key: str = Field(default="", repr=False)
     google_api_key: str = Field(default="", repr=False)
     openai_api_key: str = Field(default="", repr=False)
