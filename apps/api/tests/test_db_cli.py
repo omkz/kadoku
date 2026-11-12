@@ -85,3 +85,48 @@ def test_staging_auth_env_must_match_api_database(staging_settings, monkeypatch)
     with pytest.raises(RuntimeError, match="same PostgreSQL host"):
         cli._web_seed_env("staging", "kadoku", expected_db_host="dpg-demo.render.com",
                           expected_auth_host="kadoku-web.onrender.com", confirmed=True)
+
+
+
+def test_staging_preparation_does_not_require_node_or_web_sources(staging_settings, monkeypatch):
+    # Render's API service has only the Python project; no Next.js checkout.
+    monkeypatch.setattr(cli, "_web_seed_env", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Node env used")))
+    monkeypatch.setattr(cli, "_check_web_database", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Node check used")))
+    name, web_env = cli._prepare(
+        "staging", confirmed=True, expected_db_host="dpg-demo.render.com",
+        expected_db_name="kadoku", expected_auth_host="kadoku-web.onrender.com",
+    )
+    assert name == "kadoku"
+    assert web_env == {}
+
+
+def test_staging_seed_accounts_require_distinct_strong_test_credentials(monkeypatch):
+    values = {
+        "DEV_ADMIN_EMAIL": "admin@kadoku.test",
+        "DEV_ADMIN_PASSWORD": "a-dedicated-staging-admin-secret",
+        "DEV_CUSTOMER_NAME": "customer",
+        "DEV_CUSTOMER_EMAIL": "customer@kadoku.test",
+        "DEV_CUSTOMER_PASSWORD": "different-customer-staging-secret",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    accounts = cli._staging_accounts()
+    assert [a.role for a in accounts] == ["admin", "user"]
+    assert len(accounts) == 2
+    assert accounts[0].name == "Kadoku Admin"
+    assert accounts[1].name == "customer"
+    monkeypatch.setenv("DEV_CUSTOMER_PASSWORD", values["DEV_ADMIN_PASSWORD"])
+    with pytest.raises(RuntimeError, match="separate"):
+        cli._staging_accounts()
+
+
+def test_staging_migration_does_not_try_better_auth_node_cli(staging_settings, monkeypatch):
+    monkeypatch.setattr(cli, "_prepare", lambda *args, **kwargs: ("kadoku", {}))
+    commands = []
+    monkeypatch.setattr(cli, "_run", lambda *args, **kwargs: commands.append(args))
+    verified = []
+    monkeypatch.setattr(cli, "_verify_auth_schema", lambda: verified.append(True))
+    cli.migrate(**STAGING)
+    assert len(commands) == 1
+    assert commands[0][-3:] == ("alembic", "upgrade", "head")
+    assert verified == [True]
