@@ -2,7 +2,8 @@
 // Explicit operator-only account provisioning. Never import this from the app.
 import {stdin, stdout} from "node:process";
 import {emitKeypressEvents} from "node:readline";
-import {Pool} from "pg";
+import pg from "pg";
+const {Pool} = pg;
 import {betterAuth} from "better-auth";
 import {admin} from "better-auth/plugins";
 
