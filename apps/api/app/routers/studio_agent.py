@@ -2,7 +2,7 @@
 
 AG Studio runs its built-in agent loop and executes widget tools in the browser.
 The backend makes ONE bounded model request per turn, translating the AG
-conversation to OpenAI Chat Completions (Gemini supported via LiteLLM).
+conversation to OpenAI Chat Completions (supported providers via LiteLLM).
 It never accepts URLs, executes tools, or exposes a provider credential.
 """
 from __future__ import annotations
@@ -56,6 +56,8 @@ def _provider_key(model: str) -> str | None:
         return settings.openai_api_key.strip()
     if model.startswith("groq/"):
         return settings.groq_api_key.strip()
+    if model.startswith("nebius/"):
+        return settings.nebius_api_key.strip()
     # Other LiteLLM providers may use different credentials and conventions.
     return None
 
@@ -64,7 +66,7 @@ def _enabled() -> bool:
     if not get_settings().studio_agent_enabled or not _configured_model():
         return False
     model = _configured_model()
-    if model.startswith(("gemini/", "openai/", "groq/")):
+    if model.startswith(("gemini/", "openai/", "groq/", "nebius/")):
         return bool(_provider_key(model))
     return True
 
@@ -79,7 +81,8 @@ def _safe_provider_error(exc: Exception, model: str) -> tuple[int, str]:
     code = status if isinstance(status, int) else None
     kind = type(exc).__name__.lower()
     provider = ("Gemini" if model.startswith("gemini/") else
-                "Groq" if model.startswith("groq/") else "LLM")
+                "Groq" if model.startswith("groq/") else
+                "Nebius" if model.startswith("nebius/") else "LLM")
 
     if code == 401 or "authenticationerror" in kind:
         return 502, f"{provider} authentication failed. Check the API key in apps/api/.env."
@@ -327,6 +330,8 @@ async def turn(
             raise HTTPException(503, "OpenAI API key is missing from apps/api/.env")
         if get_settings().studio_agent_enabled and model.startswith("groq/"):
             raise HTTPException(503, "Groq API key is missing from apps/api/.env")
+        if get_settings().studio_agent_enabled and model.startswith("nebius/"):
+            raise HTTPException(503, "Nebius API key is missing from apps/api/.env")
         raise HTTPException(503, "Studio AI is not configured on the server")
     # Cap decoded JSON too, since request body may be decompressed by an upstream
     # reverse proxy and content-length cannot be trusted.
@@ -362,6 +367,9 @@ async def turn(
     provider_key = _provider_key(_configured_model())
     if provider_key:
         kwargs["api_key"] = provider_key
+    if _configured_model().startswith("nebius/"):
+        # LiteLLM may default to a legacy Nebius host; Token Factory uses /v1.
+        kwargs["api_base"] = "https://api.tokenfactory.nebius.com/v1"
     # Do not combine Gemini JSON MIME responses with tool declarations.
     if not tools and payload.responseFormat and payload.responseFormat.get("type") != "text":
         kwargs["response_format"] = {"type": "json_object"}

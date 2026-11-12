@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     google_api_key: str = Field(default="", repr=False)
     openai_api_key: str = Field(default="", repr=False)
     groq_api_key: str = Field(default="", repr=False)  # AG Studio GroqCloud free-tier or paid key
+    nebius_api_key: str = Field(default="", repr=False)  # Token Factory credits / API
     paypal_client_id: str = ""
     paypal_client_secret: str = ""
     paypal_webhook_id: str = ""

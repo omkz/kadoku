@@ -419,3 +419,56 @@ def test_groq_failure_message_is_safe():
     assert status == 429
     assert "Groq quota" in detail
     assert "secret" not in detail
+
+
+def test_studio_nebius_provider_key_and_api_base(
+    client, token_factory, monkeypatch, set_auth_role,
+):
+    """Nebius credits are used only by the admin Studio provider, not gift AI."""
+    ready(monkeypatch, set_auth_role)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "studio_agent_model", "nebius/zai-org/GLM-5.3-Flash")
+    monkeypatch.setattr(settings, "nebius_api_key", "nebius-test-credential")
+    monkeypatch.setattr(settings, "studio_agent_min_interval_seconds", 0.0)
+    seen = []
+
+    async def model(**kwargs):
+        seen.append(kwargs)
+        call = SimpleNamespace(
+            id="nebius-tool-1",
+            function=SimpleNamespace(
+                name="add_widget", arguments='{"category":"coffee"}',
+            ),
+        )
+        return fake_response(text="", calls=[call])
+
+    monkeypatch.setattr(agent, "_provider_completion", model)
+    h = headers(token_factory)
+    assert client.get(ENDPOINT + "/status", headers=h).json()["enabled"] is True
+    result = client.post(ENDPOINT + "/turn", json=payload(), headers=h)
+    assert result.status_code == 200, result.text
+    assert result.json()["output"][0]["name"] == "add_widget"
+    assert seen[0]["model"] == "nebius/zai-org/GLM-5.3-Flash"
+    assert seen[0]["api_key"] == "nebius-test-credential"
+    assert seen[0]["api_base"] == "https://api.tokenfactory.nebius.com/v1"
+    assert seen[0]["tools"][0]["function"]["name"] == "add_widget"
+
+    monkeypatch.setattr(settings, "nebius_api_key", "")
+    assert client.get(ENDPOINT + "/status", headers=h).json()["enabled"] is False
+    response = client.post(ENDPOINT + "/turn", json=payload(), headers=h)
+    assert response.status_code == 503
+    assert "Nebius API key" in response.json()["detail"]
+    assert len(seen) == 1
+
+
+def test_nebius_rate_limit_error_redacts_details():
+    class RateLimited(Exception):
+        status_code = 429
+
+    status, detail = agent._safe_provider_error(
+        RateLimited("private credential should never be returned"),
+        "nebius/zai-org/GLM-5.3-Flash",
+    )
+    assert status == 429
+    assert "Nebius quota" in detail
+    assert "private credential" not in detail

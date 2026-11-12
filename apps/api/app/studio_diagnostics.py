@@ -1,7 +1,7 @@
-"""Safe, two-stage Gemini/LiteLLM smoke test for Kadoku Studio AI.
+"""Safe, two-stage LiteLLM smoke test for Kadoku Studio AI.
 
 Run from apps/api:
-    uv run --extra ai python -m app.studio_diagnostics
+    uv run python -m app.studio_diagnostics
 
 Sends two small, synthetic requests: plain text, then one minimal function.
 Prints only the LiteLLM exception class/status and exception *type* chain.
@@ -58,8 +58,10 @@ async def run() -> int:
         provider_key = settings.openai_api_key.strip()
     elif model.startswith("groq/"):
         provider_key = settings.groq_api_key.strip()
+    elif model.startswith("nebius/"):
+        provider_key = settings.nebius_api_key.strip()
     else:
-        print("Model prefix is unsupported by this diagnostic. Set STUDIO_AGENT_MODEL=gemini/<model> or groq/<model>.")
+        print("Model prefix is unsupported by this diagnostic. Set STUDIO_AGENT_MODEL=gemini/<model>, groq/<model>, or nebius/<model>.")
         return 2
     if not model or not provider_key:
         print("Studio model or provider key is missing from apps/api/.env.")
@@ -83,6 +85,8 @@ async def run() -> int:
         "timeout": 25,
         "num_retries": 0,
     }
+    if model.startswith("nebius/"):
+        base["api_base"] = "https://api.tokenfactory.nebius.com/v1"
     basic = await _probe(
         "Plain text",
         {**base, "messages": [{"role": "user", "content": "Reply with just OK."}]},
