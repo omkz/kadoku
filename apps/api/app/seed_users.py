@@ -143,6 +143,7 @@ def provision_demo_users(
     expected_db_name: str | None = None,
     expected_auth_host: str | None = None,
     with_business_data: bool = True,
+    allow_two_accounts: bool = False,
 ) -> dict[str, str]:
     """Create missing users, verify ownership of existing identities, assign roles.
 
@@ -158,9 +159,13 @@ def provision_demo_users(
         target=target, auth_url=get_settings().better_auth_url,
         expected_auth_host=expected_auth_host,
     )
-    if len(accounts) != 3 or {a.role for a in accounts} != {"user", "admin", "super_admin"}:
-        raise ValueError("Exactly one demo account for each role is required")
-    if len({a.email for a in accounts}) != 3:
+    roles = {a.role for a in accounts}
+    if not (
+        (len(accounts) == 3 and roles == {"user", "admin", "super_admin"})
+        or (allow_two_accounts and len(accounts) == 2 and roles == {"user", "admin"})
+    ):
+        raise ValueError("Expected three demo roles, or an explicitly authorized two-account staging seed")
+    if len({a.email for a in accounts}) != len(accounts):
         raise ValueError("Demo account emails must be unique")
 
     provisioned: dict[str, str] = {}
