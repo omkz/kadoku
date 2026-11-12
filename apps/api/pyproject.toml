@@ -12,9 +12,9 @@ dependencies = [
   "pydantic-settings>=2.7,<3",
   "httpx>=0.28,<1",
   "PyJWT[crypto]>=2.10,<3",
+  "litellm>=1.60,<3",
 ]
 [project.optional-dependencies]
-ai = ["litellm>=1.60,<3"]
 test = ["pytest>=8,<10", "pytest-cov>=6,<8"]
 [build-system]
 requires = ["setuptools>=75"]
