@@ -85,6 +85,19 @@ class Order(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class PaymentRefund(Base):
+    __tablename__ = "payment_refunds"
+    __table_args__ = (UniqueConstraint("order_id", "request_key", name="uq_refund_order_request"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
+    request_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    paypal_refund_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PaymentEvent(Base):
     __tablename__ = "payment_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
