@@ -6,7 +6,8 @@
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && node --check scripts/admin-create.mjs",
+    "admin:create": "node --env-file=.env scripts/admin-create.mjs"
   },
   "dependencies": {
     "ag-studio": "3.1.0",
