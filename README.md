@@ -9,7 +9,7 @@
 - **Web:** Next.js 16, React 19, TypeScript, CSS, Better Auth (email/password; optional Google OAuth).
 - **API:** Python, FastAPI, SQLAlchemy 2, Alembic; traditional layered architecture.
 - **Database:** PostgreSQL (native/local is supported); SQLite is supported for backend-only local tests.
-- **AI:** Deterministic catalog-grounded recommendation engine with LiteLLM intent extraction **and natural concierge replies**; model can be changed using `AI_MODEL`. LangChain is not required.
+- **AI:** Catalog-grounded gift recommendations with optional Google Gemini via LiteLLM for intent and natural replies, plus a rules-based fallback. Nebius Token Factory via LiteLLM can power AG Studio's admin AI Analyst. `AI_MODEL` and `STUDIO_AGENT_MODEL` are configured independently; LangChain is not required.
 - **Checkout:** PayPal Orders v2 Sandbox using redirect approval and server-side capture. The integration is intentionally **blocked in live mode**.
 - **Voice:** Browser SpeechRecognition where supported, with typing fallback; may rely on the browser vendor's speech service.
 
@@ -31,7 +31,7 @@ On the gifts screen, Kadoku now lets shoppers ask for changes such as **"Make it
 - "More personal" prioritizes demo products marked as personal (subject to budget and stock).
 - Explicit dollar budgets in a new turn override the earlier budget; existing exclusions are retained.
 - Chat context is **kept only in the current browser tab's React state**, not persisted to PostgreSQL. Home starts a fresh conversation. Saved recipient profiles remain separate.
-- **Every recommendation/refinement call consumes the existing daily quota**. Guests are currently limited to one call/day and need to sign in to refine further. This flow is not unlimited chat.
+- **Every recommendation/refinement call consumes the existing daily quota**. Guests are limited to three recommendation/clarification requests per UTC day by default, while signed-in members have five. Both limits are configurable in the API environment. This flow is not unlimited chat.
 - No LLM-generated product or price is accepted; recommendations always come from the catalog.
 
 ## Demo catalog (100 products) and product images
@@ -50,7 +50,7 @@ ranking changes are necessary. Adding more items does not by itself prove
 recommendation relevance; the tests verify hard constraints and seed behavior,
 not subjective gift quality.
 
-For an **existing database**, run any outstanding Alembic migrations and rerun the seed command after checking out this branch:
+For an **existing database**, run any outstanding Alembic migrations and rerun the seed command from an up-to-date checkout:
 
 ```bash
 cd apps/api
@@ -280,11 +280,11 @@ uv run alembic upgrade head
 
 AG Studio is only used inside Analytics; regular Products/Orders tables remain unchanged. This feature adds the commercial `ag-studio` + `ag-studio-react` packages pinned to matching **3.1.0** versions. Implement supplier-backed listing validation, image upload/object storage, stock reservations, courier integration, payment refunds and customer communications before live commerce.
 
-### AG Studio Analytics (feature branch)
+### AG Studio Analytics
 
 The **Analytics** item in `/admin` embeds AG Studio into the existing Next.js admin shell, backed by **`GET /api/v1/admin/analytics?days=30`**. The API returns server-aggregated payment, fulfillment, daily activity and product-performance datasets for 7, 30 or 90 days. The same admin-only JWT allowlist protects this endpoint; no customer accounts, addresses, PayPal identifiers, shipping records or raw payments are exposed to the client analytics engine.
 
-Use the normal backend/frontend commands above, and install the new frontend dependency once after checking out this branch:
+From an up-to-date checkout, use the normal backend/frontend commands above and install the pinned frontend dependencies:
 
 ```bash
 cd apps/web
@@ -300,39 +300,44 @@ AG Studio can run locally without a licence; a paid or trial licence is required
 
 ### AI Analyst via Studio Agent Framework (opt-in)
 
-Kadoku uses **AG Studio's actual built-in AI harness, agents, tools and chat panel**, connected to a small in-project adapter at `apps/web/lib/studio-agent-adapter.ts`. The adapter sends each turn to the **admin-only** FastAPI route `POST /api/v1/admin/analytics/agent/turn`. FastAPI converts AG Studio messages and tool schemas to LiteLLM Chat Completions with a provider such as Gemini; the LLM returns tool calls to AG Studio, **which performs dashboard updates in the browser**. Provider credentials never reach the browser, and there is no separate ChatGPT API requirement.
+Kadoku uses **AG Studio's actual built-in AI harness, agents, tools and chat panel**, connected to a small in-project adapter at `apps/web/lib/studio-agent-adapter.ts`. The adapter sends each turn to the **admin-only** FastAPI route `POST /api/v1/admin/analytics/agent/turn`. FastAPI converts AG Studio messages and tool schemas to LiteLLM Chat Completions with a configured provider such as Gemini or Nebius Token Factory; the LLM returns tool calls to AG Studio, **which performs dashboard updates in the browser**. Provider credentials never reach the browser, and there is no separate ChatGPT API requirement.
 
-**Local setup:** Run `uv sync` (LiteLLM is installed by default) and set these values in **`apps/api/.env` only**, then restart FastAPI:
+**Local setup:** LiteLLM is installed by default with `uv sync`. Configure gift discovery and admin analytics independently in **`apps/api/.env` only**, then restart FastAPI. For example, use Gemini for the shopper concierge and Nebius Token Factory for Studio AI Analyst:
 
 ```bash
 cd apps/api
-uv sync --extra test
+uv sync
 # In apps/api/.env:
+# AI_MODEL=gemini/gemini-2.5-flash
+# GEMINI_API_KEY=<your Gemini key>
 # STUDIO_AGENT_ENABLED=true
-# STUDIO_AGENT_MODEL=gemini/gemini-2.5-flash
-# GEMINI_API_KEY=<your own provider key>
+# STUDIO_AGENT_MODEL=nebius/zai-org/GLM-5.3-Flash
+# NEBIUS_API_KEY=<your Nebius Token Factory key>
+# STUDIO_AGENT_MIN_INTERVAL_SECONDS=0
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout**, open AG Studio's built-in **AI chat panel**, then try a prompt starter such as **Chart paid gift categories**. The assistant will use Studio tools to read the existing aggregate datasets and add/change a widget. AG Studio should show actual tool calls; if the model only replies in text, inspect the backend error and provider's tool support. You may reuse `AI_MODEL=gemini/...` instead of specifying `STUDIO_AGENT_MODEL`, but the dedicated setting is preferable because the admin agent uses more tokens than shopper intent extraction.
+Model IDs are examples: confirm availability for your account. Keep all provider keys server-side.
 
-**Nebius Token Factory alternative (API credits):** For AG Studio AI Analyst, configure `apps/api/.env` with `STUDIO_AGENT_ENABLED=true`, `STUDIO_AGENT_MODEL=nebius/zai-org/GLM-5.3-Flash`, `NEBIUS_API_KEY=<your Token Factory key>`, and `STUDIO_AGENT_MIN_INTERVAL_SECONDS=0`; keep your shopper `AI_MODEL` and Gemini key unchanged. Restart FastAPI and start a fresh Studio conversation. LiteLLM's `nebius/` prefix selects the provider; the backend explicitly uses `https://api.tokenfactory.nebius.com/v1` instead of a legacy endpoint. Verify that your promotional credits are still valid for Token Factory and that your key is authorized for the chosen model (list accessible models with `GET /v1/models`); Nebius bills usage against available credits and may have account-specific limits. Run `uv run python -m app.studio_diagnostics` for two small provider calls before the full AG Studio workflow. If this model is not in your account catalog, replace the model ID with one that supports function calling, preserving the `nebius/` prefix. Live API/AG Studio end-to-end testing remains manual.
+Sign in as an administrator, visit **/admin → Analytics**, enter **Edit layout**, open AG Studio's built-in **AI chat panel**, then try a prompt starter such as **Chart paid gift categories**. The assistant will use Studio tools to read the existing aggregate datasets and add/change a widget. AG Studio should show actual tool calls; if the model only replies in text, inspect the backend error and provider's tool support. If `STUDIO_AGENT_MODEL` is empty, it falls back to `AI_MODEL`. The dedicated setting is preferable because the admin agent has different token usage and function-calling requirements from shopper intent extraction.
+
+**Nebius Token Factory for Studio AI (API credits):** For AG Studio AI Analyst, configure `apps/api/.env` with `STUDIO_AGENT_ENABLED=true`, `STUDIO_AGENT_MODEL=nebius/zai-org/GLM-5.3-Flash`, `NEBIUS_API_KEY=<your Token Factory key>`, and `STUDIO_AGENT_MIN_INTERVAL_SECONDS=0`; keep your shopper `AI_MODEL` and Gemini key unchanged. Restart FastAPI and start a fresh Studio conversation. LiteLLM's `nebius/` prefix selects the provider; the backend explicitly uses `https://api.tokenfactory.nebius.com/v1` instead of a legacy endpoint. Verify that your promotional credits are still valid for Token Factory and that your key is authorized for the chosen model (list accessible models with `GET /v1/models`); Nebius bills usage against available credits and may have account-specific limits. Run `uv run python -m app.studio_diagnostics` for two small provider calls before the full AG Studio workflow. If this model is not in your account catalog, replace the model ID with one that supports function calling, preserving the `nebius/` prefix. The Nebius-backed chart workflow was demonstrated manually for Kadoku. Automated tests still use mocked providers; recheck the live workflow after changing models, credentials, or deployment.
 
 **GroqCloud alternative (free tier):** Kadoku's AG Studio AI Analyst can use Groq without changing the shopper's `AI_MODEL`. Create a project API key at https://console.groq.com/keys, then configure **only** `apps/api/.env` with `STUDIO_AGENT_ENABLED=true`, `STUDIO_AGENT_MODEL=groq/openai/gpt-oss-120b`, `GROQ_API_KEY=<your key>`, and `STUDIO_AGENT_MIN_INTERVAL_SECONDS=0`. Restart FastAPI and open a fresh AG Studio conversation. LiteLLM is already installed through `uv sync`. To probe basic text/tool access safely, run `uv run python -m app.studio_diagnostics`. Groq free-tier limits are model- and organization-dependent (published baseline for GPT-OSS 120B: 30 RPM / 1,000 RPD / 8,000 TPM); AG Studio's larger tool schemas may exhaust TPM, so this is **not yet a verified end-to-end integration**. Do not enable paid billing to try the free tier. Alternate model: `groq/qwen/qwen3.8-27b` (if available on your account).
 
 **Low-quota Gemini setup:** AG Studio runs a multi-step agent workflow, which may send several LLM requests for one user prompt. If your Gemini model allows only 5 RPM, set `STUDIO_AGENT_MIN_INTERVAL_SECONDS=15` in `apps/api/.env` and restart FastAPI. This spaces model calls made by a single API process; it does **not** increase or reset the daily request limit (RPD), coordinate across workers, or retry quota errors. A full chart may take longer to appear; trim the waiting time in the screen recording. Use a single Uvicorn worker for this local demo.
 
-**Constraints:** AG Studio's model uses only the aggregated data exposed in its datasets plus tool results. Tool schemas and query results can be sent to Gemini to answer analytics questions. The endpoint is authenticated, explicitly opt-in, restricted to text, and has a per-process **90-turn/hour/admin** cap; this is a development safeguard, **not** a distributed production billing limiter. For deployment, add persistent rate limits/budgets, logging, provider access policies and review the AG Studio AI licence. It cannot charge PayPal or mutate catalog/fulfillment records. Captured values are **Sandbox test payments only**, and no recommendation-event conversion data exists yet.
+**Constraints:** AG Studio's model uses only the aggregated data exposed in its datasets plus tool results. Tool schemas and aggregated query results can be sent to the configured AI provider (such as Nebius or Gemini) to answer analytics questions. The endpoint is authenticated, explicitly opt-in, restricted to text, and has a per-process **90-turn/hour/admin** cap; this is a development safeguard, **not** a distributed production billing limiter. For deployment, add persistent rate limits/budgets, logging, provider access policies and review the AG Studio AI licence. It cannot charge PayPal or mutate catalog/fulfillment records. Captured values are **Sandbox test payments only**, and no recommendation-event conversion data exists yet.
 
-Tests exercise the proxy and round-trip tool calls with a fake provider, but **live Gemini calls and browser agent interactions still require manual QA before merge**.
+Automated tests exercise the proxy and round-trip tool calls with a fake provider. The Nebius-backed chart workflow has been demonstrated manually; verify the complete browser workflow after provider, model, or deployment changes.
 
-**AG Studio history error `Invalid prior tool call`:** The chat adapter now normalises prior tool arguments supplied either as JSON text or an already-decoded object, permits empty arguments for parameterless tools, and ensures every Gemini function call has a non-empty `callId` before sending it back to Studio. These changes preserve the tool-call-to-tool-result pairing required by AG Studio. If an older thread was created before the fix and still contains a malformed call, start a **new Studio AI conversation** to test the corrected producer and parser together. Do not reset the saved dashboard layout unless you actually want to reset it.
+**AG Studio history error `Invalid prior tool call`:** The chat adapter now normalises prior tool arguments supplied either as JSON text or an already-decoded object, permits empty arguments for parameterless tools, and ensures every model function call has a non-empty `callId` before sending it back to Studio. These changes preserve the tool-call-to-tool-result pairing required by AG Studio. If an older thread was created before the fix and still contains a malformed call, start a **new Studio AI conversation** to test the corrected producer and parser together. Do not reset the saved dashboard layout unless you actually want to reset it.
 
 #### If Studio AI fails with LiteLLM APIConnectionError (500)
 
 **Do not enable LiteLLM's full request/response debug output** or paste provider credentials into issue reports. LiteLLM's `APIConnectionError (500)` is a generic fallback for some internal translation failures as well as genuine network problems, so a 502 from Kadoku does not establish the root cause.
 
-With the Gemini key already configured in `apps/api/.env`, run:
+With the relevant provider key (Gemini, Groq, or Nebius) configured in `apps/api/.env`, run:
 
 ```bash
 cd apps/api
@@ -341,8 +346,8 @@ uv run python -m app.studio_diagnostics
 
 This makes **two small real provider requests** with no customer or transaction data, reports the LiteLLM version, model, success/failure, HTTP status and exception **class names only** (never raw provider exception text or API keys). It intentionally costs a small amount of provider quota. Interpret the results:
 
-- **Plain text FAIL:** start with Gemini API connectivity, model access, credentials, quota and LiteLLM version.
-- **Plain text OK; Minimal tool calling FAIL:** isolate Gemini function calling or LiteLLM's function schema transformation.
+- **Plain text FAIL:** start with provider connectivity, model access, credentials, quota and LiteLLM version.
+- **Plain text OK; Minimal tool calling FAIL:** isolate the provider's function calling or LiteLLM's schema transformation.
 - **Both OK:** provider access is viable; investigate the much larger AG Studio tool definitions/history. Capturing a stripped-down diagnostic of tool schema size/field types is safer than logging full prompts or tool data.
 
 The authenticated Studio Agent endpoint also logs just exception class chain, upstream status code and tool/message counts. Share those diagnostic lines, not exception messages, full HTTP payloads or secrets.
