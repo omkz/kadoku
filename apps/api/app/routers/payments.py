@@ -71,8 +71,7 @@ def apply_refund_result(db: Session, order: Order, refund: PaymentRefund, respon
     refund.paypal_refund_id = refund_id
     refund.status = status
     if status == "completed":
-        refunded = completed_refunds(db, order.id)
-        # Recalculate after flushing the current refund's new status.
+        # Include this refund in the aggregate before updating order state.
         db.flush()
         refunded = completed_refunds(db, order.id)
         if refunded > order.price_snapshot_minor:
@@ -81,13 +80,8 @@ def apply_refund_result(db: Session, order: Order, refund: PaymentRefund, respon
     db.commit()
 
 
-@router.post("/orders/{order_id}/reconcile")
-async def reconcile_checkout(order_id: str, user_id: str = Depends(required_user),
-                             db: Session = Depends(get_db)):
-    """Recover a completed capture when the checkout response was lost."""
-    order = db.scalar(select(Order).where(Order.id == order_id, Order.user_id == user_id).with_for_update())
-    if not order:
-        raise HTTPException(404, "Order not found")
+async def reconcile_order(order: Order, db: Session) -> dict:
+    """Verify PayPal's current state without initiating another capture."""
     if order.status not in ("approval_pending", "paid") or not order.paypal_order_id:
         raise HTTPException(409, "Order is not awaiting payment reconciliation")
     data = await PayPalClient().get_order(order.paypal_order_id)
@@ -112,6 +106,26 @@ async def reconcile_checkout(order_id: str, user_id: str = Depends(required_user
     order.status = "paid"
     db.commit()
     return {"status": "paid", "order_id": order.id, "reconciled": True}
+
+
+@router.post("/orders/{order_id}/reconcile")
+async def reconcile_checkout(order_id: str, user_id: str = Depends(required_user),
+                             db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(
+        Order.id == order_id, Order.user_id == user_id
+    ).with_for_update())
+    if not order:
+        raise HTTPException(404, "Order not found")
+    return await reconcile_order(order, db)
+
+
+@router.post("/admin/orders/{order_id}/reconcile")
+async def reconcile_admin_order(order_id: str, _: str = Depends(required_admin),
+                                db: Session = Depends(get_db)):
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if not order:
+        raise HTTPException(404, "Order not found")
+    return await reconcile_order(order, db)
 
 
 @router.get("/admin/orders/{order_id}/refunds", response_model=list[RefundOut])
