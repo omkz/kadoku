@@ -1,6 +1,6 @@
 # Kadoku — Product Requirements v0.3
 
-**Positioning:** A personal AI gifting companion and shop-owned curated gift store, built for the long term; PayPal AI Hackathon is an early demonstration opportunity.
+**Positioning:** Your AI Gift Concierge. A conversation-first gift-shopping experience powered by a shop-owned curated catalog, built for the long term; PayPal AI Hackathon is an early demonstration opportunity.
 
 ## User problem
 

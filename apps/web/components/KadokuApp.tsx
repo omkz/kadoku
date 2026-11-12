@@ -501,13 +501,13 @@ export default function KadokuApp() {
       <header className="topbar">
         <button className="brand" onClick={goHome} aria-label="Kadoku home"><span className="brand-mark">✦</span> kadoku<span className="brand-dot">.</span></button>
         <div className="header-right">
-          <span className="header-tag">your gifting companion</span>
+          <span className="header-tag">your AI gift concierge</span>
           {session?.user ? <button className="mini-avatar" aria-label="My people" onClick={()=>setScreen("people")}>{session.user.name?.slice(0,1).toUpperCase()||"U"}</button>
             : <button className="text-button" onClick={()=>setShowAuth(true)}>Sign in</button>}
         </div>
       </header>
       {screen==="home" && <main className="home-screen page-enter">
-        <p className="eyebrow">YOUR PERSONAL GIFT COMPANION</p>
+        <p className="eyebrow">YOUR AI GIFT CONCIERGE</p>
         <h1>Make someone’s <span>day.</span></h1>
         <p className="hero-subtitle">Tell me who you’re shopping for, what they love, and your budget.</p>
         <div className="composer">
