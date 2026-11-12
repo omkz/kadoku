@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import httpx
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +28,7 @@ from app.db.session import SessionLocal, engine
 from app.db_reset import reject_unknown_objects
 from app.seed import seed
 from app.seed_scenarios import seed_demo_scenarios
+from app.seed_users import DemoAccount, provision_demo_users
 
 API_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = API_DIR.parent / "web"
@@ -156,6 +158,10 @@ def _prepare(
         target, confirmed=confirmed, expected_db_host=expected_db_host,
         expected_db_name=expected_db_name, expected_auth_host=expected_auth_host,
     )
+    if target == "staging":
+        # The Render API service contains only apps/api (Python), not apps/web.
+        # Better Auth provisioning goes via the deployed HTTPS web API.
+        return name, {}
     env = _web_seed_env(
         target, name, expected_db_host=expected_db_host,
         expected_auth_host=expected_auth_host, confirmed=confirmed,
@@ -175,8 +181,13 @@ def migrate(
         target, confirmed=confirmed, expected_db_host=expected_db_host,
         expected_db_name=expected_db_name, expected_auth_host=expected_auth_host,
     )
-    _apply_migrations(env)
-    print(f"{target} Kadoku and Better Auth migrations complete.", flush=True)
+    if target == "staging":
+        _run(sys.executable, "-m", "alembic", "upgrade", "head")
+        # Better Auth migrations are performed by kadoku-web on its startup.
+        _verify_auth_schema()
+    else:
+        _apply_migrations(env)
+    print(f"{target} Kadoku and Better Auth migrations verified.", flush=True)
 
 
 def reset(
@@ -211,8 +222,49 @@ def reset(
         reject_unknown_objects(conn)
         conn.execute("DROP SCHEMA public CASCADE")
         conn.execute("CREATE SCHEMA public")
-    _apply_migrations(env)
-    print(f"{target} reset complete. Run: uv run python -m app.db seed", flush=True)
+    if target == "staging":
+        _run(sys.executable, "-m", "alembic", "upgrade", "head")
+        print(
+            "Staging public schema reset. Restart/redeploy kadoku-web now to "
+            "run Better Auth migrations; only then run app.db seed.",
+            flush=True,
+        )
+    else:
+        _apply_migrations(env)
+        print("Local reset complete. Run: uv run python -m app.db seed", flush=True)
+
+
+
+def _staging_accounts() -> list[DemoAccount]:
+    """Resolve only test credentials supplied by an operator in the Shell."""
+    def identity(key: str) -> str:
+        value = os.environ.get(key, "").strip()
+        if not value or len(value) > 320:
+            raise RuntimeError(f"Set {key} explicitly for the staging demo")
+        return value
+
+    admin_email = identity("DEV_ADMIN_EMAIL").lower()
+    customer_email = identity("DEV_CUSTOMER_EMAIL").lower()
+    customer_name = identity("DEV_CUSTOMER_NAME")
+    admin_password = os.environ.get("DEV_ADMIN_PASSWORD", "")
+    customer_password = os.environ.get("DEV_CUSTOMER_PASSWORD", "")
+    if any(
+        "@" not in email or any(character.isspace() for character in email)
+        for email in (admin_email, customer_email)
+    ):
+        raise RuntimeError("Staging demo users require valid email addresses")
+    if admin_email == customer_email:
+        raise RuntimeError("Staging admin and customer emails must differ")
+    if (
+        len(admin_password) < 16 or len(customer_password) < 16
+        or len(admin_password) > 128 or len(customer_password) > 128
+        or admin_password == customer_password
+    ):
+        raise RuntimeError("Use separate demo passwords of 16–128 characters")
+    return [
+        DemoAccount("ADMIN", "Kadoku Admin", admin_email, "admin", admin_password),
+        DemoAccount("CUSTOMER", customer_name, customer_email, "user", customer_password),
+    ]
 
 
 def seed_all(
@@ -228,39 +280,59 @@ def seed_all(
     )
     if target == "staging" and os.environ.get("STAGING_DEMO_SEED_ENABLED") != "true":
         raise RuntimeError("Staging seed requires STAGING_DEMO_SEED_ENABLED=true.")
-    _apply_migrations(env)
-    argv = ["node"]
-    if target == "local":
-        argv.append("--env-file=.env")
-    argv.append("scripts/seed-admin.mjs")
-    result = subprocess.run(
-        argv, cwd=WEB_DIR, env=env, check=True, capture_output=True, text=True,
-    )
-    admin_ids = [
-        line.removeprefix("SEED_ADMIN_USER_ID=")
-        for line in result.stdout.splitlines()
-        if line.startswith("SEED_ADMIN_USER_ID=")
-    ]
-    customer_ids = [
-        line.removeprefix("SEED_CUSTOMER_USER_ID=")
-        for line in result.stdout.splitlines()
-        if line.startswith("SEED_CUSTOMER_USER_ID=")
-    ]
-    if len(admin_ids) != 1 or not admin_ids[0]:
-        raise RuntimeError("Better Auth seed did not return one admin user ID.")
-    if len(customer_ids) != 1 or not customer_ids[0] or customer_ids[0] == admin_ids[0]:
-        raise RuntimeError("Better Auth seed did not return a separate customer ID.")
-    public_lines = [
-        line for line in result.stdout.splitlines()
-        if not line.startswith(("SEED_ADMIN_USER_ID=", "SEED_CUSTOMER_USER_ID="))
-    ]
-    print("\n".join(public_lines), flush=True)
-    with SessionLocal() as db:
-        added = seed(db)
-        fixtures = seed_demo_scenarios(
-            db, user_id=customer_ids[0], target=target,
-            expected_db_host=expected_db_host, expected_db_name=expected_db_name,
+    if target == "staging":
+        # All Render operations stay inside the API service and private DB.
+        _run(sys.executable, "-m", "alembic", "upgrade", "head")
+        _verify_auth_schema()
+        accounts = _staging_accounts()
+        with SessionLocal() as db:
+            with httpx.Client(timeout=60.0, follow_redirects=False) as client:
+                provision_demo_users(
+                    db, client=client, accounts=accounts, target="staging",
+                    expected_db_host=expected_db_host,
+                    expected_db_name=expected_db_name,
+                    expected_auth_host=expected_auth_host,
+                    with_business_data=False, allow_two_accounts=True,
+                )
+            customer_id = db.execute(
+                text('SELECT id FROM "user" WHERE lower(email) = :email'),
+                {"email": accounts[1].email},
+            ).scalar_one()
+            added = seed(db)
+            fixtures = seed_demo_scenarios(
+                db, user_id=customer_id, target="staging",
+                expected_db_host=expected_db_host,
+                expected_db_name=expected_db_name,
+            )
+        print("Staging admin and customer ready (Better Auth).", flush=True)
+    else:
+        _apply_migrations(env)
+        argv = ["node", "--env-file=.env", "scripts/seed-admin.mjs"]
+        result = subprocess.run(
+            argv, cwd=WEB_DIR, env=env, check=True, capture_output=True, text=True,
         )
+        admin_ids = [
+            line.removeprefix("SEED_ADMIN_USER_ID=")
+            for line in result.stdout.splitlines()
+            if line.startswith("SEED_ADMIN_USER_ID=")
+        ]
+        customer_ids = [
+            line.removeprefix("SEED_CUSTOMER_USER_ID=")
+            for line in result.stdout.splitlines()
+            if line.startswith("SEED_CUSTOMER_USER_ID=")
+        ]
+        if len(admin_ids) != 1 or not admin_ids[0]:
+            raise RuntimeError("Better Auth seed did not return one admin user ID.")
+        if len(customer_ids) != 1 or not customer_ids[0] or customer_ids[0] == admin_ids[0]:
+            raise RuntimeError("Better Auth seed did not return a separate customer ID.")
+        public_lines = [
+            line for line in result.stdout.splitlines()
+            if not line.startswith(("SEED_ADMIN_USER_ID=", "SEED_CUSTOMER_USER_ID="))
+        ]
+        print("\n".join(public_lines), flush=True)
+        with SessionLocal() as db:
+            added = seed(db)
+            fixtures = seed_demo_scenarios(db, user_id=customer_ids[0])
     print(f"Products added: {added}; demo fixtures: {fixtures}", flush=True)
     print(f"{target} seed complete.", flush=True)
 
