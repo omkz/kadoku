@@ -30,6 +30,17 @@ def fake_paypal(monkeypatch):
                 }],
             }
 
+        async def get_order(self, paypal_id):
+            local_id = paypal_id.removeprefix("PP-")
+            return {
+                "id": paypal_id,
+                "status": "APPROVED",
+                "purchase_units": [{
+                    "reference_id": local_id,
+                    "custom_id": local_id,
+                }],
+            }
+
         async def capture_order(self, paypal_id, local_id):
             return {
                 "status": "COMPLETED",
