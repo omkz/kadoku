@@ -1,12 +1,15 @@
 {
   "name": "kadoku",
   "private": true,
-  "workspaces": ["apps/web"],
+  "workspaces": [
+    "apps/web"
+  ],
   "scripts": {
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "typecheck:web": "npm --workspace apps/web run typecheck",
     "db:seed": "cd apps/api && uv run python -m app.seed_users --confirm-demo-users",
-    "db:reset": "cd apps/api && uv run python -m app.db_reset"
+    "db:reset": "cd apps/api && uv run python -m app.db_reset",
+    "admin:create": "pnpm --dir apps/web admin:create"
   }
 }
