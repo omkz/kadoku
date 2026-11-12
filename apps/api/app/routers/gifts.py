@@ -8,6 +8,7 @@ from app.models import Recipient
 from app.schemas.gifts import GiftCard, GiftRequest, GiftResponse, ProductOut
 from app.services.gifting import recommend, understand_request
 from app.services.conversation import refine_request, next_context
+from app.services.concierge import clarification_for, concierge_reply
 from app.services.quota import use_recommendation
 
 router = APIRouter(prefix="/api/v1", tags=["gifting"])
@@ -51,11 +52,26 @@ async def gift_recommendations(payload: GiftRequest, request: Request,
         intent.avoid = sorted(set(intent.avoid) | set(recipient.avoids))
         if intent.budget_minor is None:
             intent.budget_minor = recipient.usual_budget_minor
-    choices = recommend(available_products(db), intent, prefer_personal=prefer_personal)
+    clarification = clarification_for(intent)
+    choices = [] if clarification else recommend(available_products(db), intent, prefer_personal=prefer_personal)
+    if clarification:
+        summary, reply_provider = clarification, "rules"
+    elif choices:
+        top, _, reason = choices[0]
+        summary, reply_provider = await concierge_reply(
+            top, reason, intent, payload.prompt, settings.ai_model,
+            timeout_seconds=settings.ai_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+        )
+    else:
+        summary, reply_provider = (
+            "I couldn't find a match in our demo catalog with those preferences. "
+            "Could you try another interest or a different budget?", "rules"
+        )
     return GiftResponse(
-        summary=(("I kept your earlier preferences and refined these gift ideas." if payload.context
-                  else "Here are up to three thoughtfully selected gift ideas.") if choices
-                 else "No gifts fit the current preferences and budget in the sample catalog. Try changing a constraint."),
+        summary=summary,
+        clarification=clarification,
+        reply_provider=reply_provider,
         recommendations=[GiftCard(
             id=p.id, name=p.name, description=p.description, category=p.category,
             price_minor=p.price_minor, currency=p.currency, emoji=p.emoji,
