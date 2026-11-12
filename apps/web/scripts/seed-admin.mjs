@@ -62,8 +62,8 @@ if (!customer.name || !customer.email.includes("@") || customer.password.length 
 if (customer.email === email) {
   throw new Error("DEV_ADMIN_EMAIL must differ from DEV_CUSTOMER_EMAIL");
 }
-if (target === "staging" && (password.length < 16 || customer.password.length < 16)) {
-  throw new Error("Staging demo passwords must each have at least 16 characters");
+if (target === "staging" && (password.length < 12 || customer.password.length < 12)) {
+  throw new Error("Staging demo passwords must each have at least 12 characters");
 }
 
 const pool = new pg.Pool({ connectionString: urlString });

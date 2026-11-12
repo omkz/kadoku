@@ -171,6 +171,24 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
     with pytest.raises(ValueError, match="unique"):
         load_accounts(target="staging", environ=env)
 
+
+def test_staging_user_loader_accepts_12_characters_but_local_requires_16():
+    env = {
+        "DEMO_CUSTOMER_EMAIL": "customer@demo.test",
+        "DEMO_ADMIN_EMAIL": "admin@demo.test",
+        "DEMO_OWNER_EMAIL": "owner@demo.test",
+        "DEMO_CUSTOMER_PASSWORD": "customer1234",
+        "DEMO_ADMIN_PASSWORD": "admin1234567",
+        "DEMO_OWNER_PASSWORD": "owner1234567",
+    }
+    assert len(load_accounts(target="staging", environ=env)) == 3
+    with pytest.raises(ValueError, match="16–128"):
+        load_accounts(target="local", environ=env)
+    env["DEMO_CUSTOMER_PASSWORD"] = "customer123"
+    with pytest.raises(ValueError, match="12–128"):
+        load_accounts(target="staging", environ=env)
+
+
 def test_local_seeding_prompts_only_for_missing_passwords():
     secret = "a-local-secret-at-least-sixteen"
     inputs = iter([secret, secret, secret + "-admin", secret + "-admin"])
