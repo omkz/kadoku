@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", repr=False)
     google_api_key: str = Field(default="", repr=False)
     openai_api_key: str = Field(default="", repr=False)
+    groq_api_key: str = Field(default="", repr=False)  # AG Studio GroqCloud free-tier or paid key
     paypal_client_id: str = ""
     paypal_client_secret: str = ""
     paypal_webhook_id: str = ""
