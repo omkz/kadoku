@@ -203,3 +203,35 @@ def test_local_password_confirmation_must_match():
     responses = iter(["first-password-16-characters", "different-password-16-characters"])
     with pytest.raises(ValueError, match="did not match"):
         local_password_environment({}, interactive=True, prompt=lambda _: next(responses))
+
+
+
+def test_two_account_staging_helper_reuses_better_auth_and_refuses_owner_role(database):
+    """The API-only staging flow creates one customer and one admin, not an owner."""
+    fake = FakeBetterAuth(database)
+    accounts = [
+        DemoAccount("ADMIN", "Kadoku Admin", "admin@kadoku.test", "admin", "admin-staging-secret-12345"),
+        DemoAccount("CUSTOMER", "customer", "customer@kadoku.test", "user", "customer-staging-secret-45678"),
+    ]
+    with database() as db:
+        with pytest.raises(ValueError, match="Expected three demo roles"):
+            provision_demo_users(
+                db, client=fake, accounts=accounts,
+                with_business_data=False,
+            )
+        provisioned = provision_demo_users(
+            db, client=fake, accounts=accounts,
+            with_business_data=False, allow_two_accounts=True,
+        )
+        assert set(provisioned) == {"admin", "customer"}
+        assert dict(db.execute(text('SELECT email, role FROM "user"')).all()) == {
+            "admin@kadoku.test": "admin", "customer@kadoku.test": "user",
+        }
+        assert db.scalar(select(func.count(Order.id))) == 0
+        assert db.scalar(select(func.count(Recipient.id))) == 0
+        again = provision_demo_users(
+            db, client=fake, accounts=accounts,
+            with_business_data=False, allow_two_accounts=True,
+        )
+        assert again == provisioned
+        assert len(fake.passwords) == 2
