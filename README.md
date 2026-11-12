@@ -8,7 +8,7 @@ Kadoku helps people find gifts through conversation instead of browsing endless 
 
 - Mobile-first gift discovery with one top pick, up to two alternatives, and catalog-grounded refinements.
 - Saved recipients, birthdays, gift notes, and order history.
-- PayPal Orders v2 checkout with server-verified capture (Sandbox).
+- PayPal Orders v2 Sandbox checkout, capture recovery, and admin refunds.
 - Admin catalog, order management, and AG Studio analytics with AI Analyst.
 
 ## Stack
@@ -71,7 +71,7 @@ External AI calls and PayPal approval/capture require separate manual tests.
 
 ## Roadmap
 
-- Complete Sandbox payment lifecycle: refunds, reconciliation, and failure recovery.
+- Automate webhook reconciliation and strengthen payment failure monitoring.
 - Integrate real suppliers, inventory, shipping, tax, and fulfillment.
 - Add production safeguards, then enable PayPal Live.
 
