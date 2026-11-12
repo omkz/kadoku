@@ -1,117 +1,98 @@
-# Kadoku Render staging database
+# Render is Kadoku staging
 
-Kadoku's current Render services are a **staging** environment (not production).
-Demo products and fictional orders are allowed, but normal deployments **never
-reset the database or provision sample users**. PayPal remains Sandbox.
+The current Render deployment is a **test environment**, separate from the
+future production deployment. PayPal remains Sandbox. Demo data can be
+discarded, but **normal deploys never reset or seed the database**.
 
-Use the same Python CLI as localhost, with explicit staging verification:
+Use the same `app.db` CLI as localhost, with `--target staging` and
+explicit confirmation. Its staging implementation runs entirely in the
+**kadoku-api Python Render Shell**, contacting the deployed Better Auth
+web API over HTTPS for sign-up/sign-in. No Node.js checkout is needed inside
+the API service.
 
-- `uv run python -m app.db migrate` — non-destructive schema migration
-- `uv run python -m app.db reset` — intentionally deletes the selected database's
-  Kadoku `public` schema, including accounts, sessions, orders and products
-- `uv run python -m app.db seed` — creates the same two test accounts, 100 demo
-  products, 38 orders, six My People and five occasions as localhost (idempotent)
+## Recommended: manage staging from Render Shell
 
-All three use `--target staging` and confirmation options. The CLI refuses
-remote connections by default.
+1. Merge and deploy the branch containing this CLI and the Better Auth Admin
+   plugin, then check the kadoku-api and kadoku-web services are healthy.
+   The API starts with Alembic upgrade; web starts with Better Auth migration.
+2. Open **Render Dashboard → kadoku-api → Shell**. Its runtime must have
+   `ENVIRONMENT=staging`, `PAYPAL_MODE=sandbox`, and a private
+   `DATABASE_URL` provided by Render.
+3. Inspect your deployment's actual DB and web hosts without printing secrets:
 
-## Before running staging commands
+   ```bash
+   uv run --active python -c 'from sqlalchemy.engine import make_url; from urllib.parse import urlsplit; from app.core.config import get_settings; s=get_settings(); u=make_url(s.database_url); print("environment:",s.environment,"paypal:",s.paypal_mode,"database host:",u.host,"database name:",u.database,"auth host:",urlsplit(s.better_auth_url).hostname)'
+   ```
 
-1. Work from a trusted local checkout of `feature/admin-role-rbac` with
-   Python/uv, Node.js and pnpm installed (`cd apps/web && pnpm install`).
-2. Locate **kadoku-db → Connect → External Database URL** in Render. The URL
-   must use TLS (`sslmode=require`). Confirm the database's exact host and name.
-3. Under **kadoku-db → Networking / Access Control**, temporarily allow only
-   **your current public IP address (/32)**. Render's existing
-   `ipAllowList: []` blocks access from outside Render. Do not open
-   `0.0.0.0/0`. Revoke this temporary rule immediately after the operation.
-4. Retrieve the existing staging `BETTER_AUTH_SECRET` from the **kadoku-web**
-   service's environment (do not generate a replacement for this operation).
-5. Put staging connection details and sample-account passwords in *operator shell
-   environment variables*, not in Git, a committed `.env`, or `render.yaml`.
-   `apps/web/.env` remains configured for localhost.
-6. The test emails must not correspond to real accounts. Use **two distinct**
-   passwords of at least 16 characters.
+4. For a **non-destructive** schema verification (optional):
 
-Example environment **with placeholders**:
+   ```bash
+   uv run --active python -m app.db migrate --target staging --confirm-staging \
+     --expected-db-host "<DB_HOST>" --expected-db-name "<DB_NAME>" \
+     --expected-auth-host "<WEB_HOST>"
+   ```
 
-```bash
-export ENVIRONMENT=staging
-export PAYPAL_MODE=sandbox
-export STAGING_DEMO_SEED_ENABLED=true
-export DATABASE_URL='<Render External Database URL with sslmode=require>'
-export AUTH_DATABASE_URL="$DATABASE_URL"
-export BETTER_AUTH_URL='https://kadoku-web.onrender.com'
-export BETTER_AUTH_SECRET='<existing kadoku-web BETTER_AUTH_SECRET>'
-export DEV_ADMIN_EMAIL='admin@kadoku.test'
-export DEV_ADMIN_PASSWORD='<unique-strong-demo-admin-password>'
-export DEV_CUSTOMER_NAME='customer'
-export DEV_CUSTOMER_EMAIL='customer@kadoku.test'
-export DEV_CUSTOMER_PASSWORD='<unique-strong-demo-customer-password>'
-```
+5. If the staging database needs to be **erased entirely**, first ensure
+   no real users/data exist and that you accept downtime. This deletes
+   Better Auth accounts, sessions, orders and all other Kadoku tables.
+   Do **not** use the local `db:reset` script.
 
-The hostname `kadoku-web.onrender.com` is an **example**; use the actual
-Render service's hostname. Never paste actual secrets into chats or screenshots.
+   ```bash
+   export STAGING_DB_RESET_ENABLED=true
+   uv run --active python -m app.db reset --target staging --confirm-staging \
+     --expected-db-host "<DB_HOST>" --expected-db-name "<DB_NAME>" \
+     --expected-auth-host "<WEB_HOST>" --confirm-db "<DB_NAME>"
+   unset STAGING_DB_RESET_ENABLED
+   ```
 
-Commands below run from `apps/api`. Replace the hostnames, database name
-and auth hostname with their **verified actual values**:
+   **After reset**, go to **kadoku-web** in Render and manually **Restart
+   Service** or redeploy it. Its startup runs the Better Auth migrations
+   that recreate `user`, `session`, `account`, `jwks` and plugin columns.
+   **Do not seed until kadoku-web is healthy again.** The API-side reset
+   restores Alembic tables only.
 
-```bash
-cd apps/api
+6. Seed **the same fixture data as local**, without resetting. Export
+   test-only credentials only in the interactive Shell session, not in
+   Render environment settings or source control. Choose separate passwords
+   of at least 16 characters. The following prompts hide password input:
 
-# Non-destructive migration (optional before a reset).
-uv run python -m app.db migrate \
-  --target staging --confirm-staging \
-  --expected-db-host <EXTERNAL_DATABASE_HOST> \
-  --expected-db-name <DATABASE_NAME> \
-  --expected-auth-host <STAGING_WEB_HOST>
+   ```bash
+   export STAGING_DEMO_SEED_ENABLED=true
+   export DEV_ADMIN_EMAIL='admin@kadoku.test'
+   export DEV_CUSTOMER_NAME='customer'
+   export DEV_CUSTOMER_EMAIL='customer@kadoku.test'
+   read -r -s -p 'Demo admin password: ' DEV_ADMIN_PASSWORD; echo
+   export DEV_ADMIN_PASSWORD
+   read -r -s -p 'Demo customer password: ' DEV_CUSTOMER_PASSWORD; echo
+   export DEV_CUSTOMER_PASSWORD
 
-# WARNING: destructive. ALL existing staging data is deleted.
-export STAGING_DB_RESET_ENABLED=true
-uv run python -m app.db reset \
-  --target staging --confirm-staging \
-  --expected-db-host <EXTERNAL_DATABASE_HOST> \
-  --expected-db-name <DATABASE_NAME> \
-  --expected-auth-host <STAGING_WEB_HOST> \
-  --confirm-db <DATABASE_NAME>
-unset STAGING_DB_RESET_ENABLED
+   uv run --active python -m app.db seed --target staging --confirm-staging \
+     --expected-db-host "<DB_HOST>" --expected-db-name "<DB_NAME>" \
+     --expected-auth-host "<WEB_HOST>"
 
-# Populate the same fixtures as local app.db seed.
-uv run python -m app.db seed \
-  --target staging --confirm-staging \
-  --expected-db-host <EXTERNAL_DATABASE_HOST> \
-  --expected-db-name <DATABASE_NAME> \
-  --expected-auth-host <STAGING_WEB_HOST>
-```
+   unset STAGING_DEMO_SEED_ENABLED DEV_ADMIN_PASSWORD DEV_CUSTOMER_PASSWORD
+   ```
 
-**Important:** the angle-bracket placeholders above must be substituted
-before executing; do not type them literally. A clean reset is only needed
-when deliberately replacing all staging data. Normally use `seed` on its
-own, which first runs non-destructive migrations.
+   This creates/verifies **1 admin and 1 customer** using the Better Auth
+   API and populates **100 demo products, 38 account orders, 6 My People
+   (including Mom) and 5 occasions**. Synthetic `paid` orders are
+   not actual PayPal captures or revenue. Repeating `seed` inserts only
+   missing fixtures and does not reset passwords. Existing accounts must
+   have the expected name and password to be reused; the process refuses
+   to adopt an unrelated account merely because the email matches.
 
-The CLI checks the PostgreSQL database host/name and the HTTPS Better Auth
-hostname, validates both FastAPI and Better Auth database URLs match, blocks
-production or live PayPal, inspects unknown schema objects before reset, and
-requires a separate opt-in and exact database-name confirmation for a remote
-reset. The account seeder verifies passwords for existing accounts rather
-than taking ownership of an email address.
+7. Verify the web app: sign in as admin and customer, inspect Customers,
+   Orders and My People. The orders and analytics show test data only.
 
-## Deployment order and verification
+## Security
 
-Render's Free tier does not provide an interactive shell or one-off jobs, so
-staging administration happens using the temporary allowlisted external
-PostgreSQL connection from a trusted machine.
-
-1. Ensure PR CI succeeds. Reset and seed the staging database as above.
-   The staging site can briefly fail while its schema is being rebuilt.
-2. Merge the PR and let Render deploy both services. The API runs Alembic
-   migrations on startup; the web service runs Better Auth migrations before
-   serving requests. Both are **non-destructive**. Neither seeds users.
-3. Log in to staging with the test admin and customer. Validate the Customers
-   table, Orders, My People (Mom), and 7/30/90-day analytics.
-4. Revoke the external DB IP allowlist rule immediately and unset shell
-   variables holding database URLs, tokens and demo credentials.
-
-Never use these credentials, data or reset procedure against an eventual
-production database. Production will have its own database, domains and
-secret configuration.
+- Only Render staging and PayPal Sandbox are allowed for remote seed/reset.
+- The operator confirms the exact private PostgreSQL host and name and HTTPS
+  Better Auth hostname. A separate `STAGING_DB_RESET_ENABLED=true`
+  opt-in plus exact DB name are required for any destructive reset.
+- Unknown database objects cause reset to abort.
+- The API Shell uses Render's **internal PostgreSQL network connection**.
+  There is no need to allowlist a developer's public IP.
+- Do not put test-account passwords into Git, `render.yaml`, public docs,
+  screenshots or issue comments. Use the Shell for one-time execution.
+- Production must eventually use separate services and database.
