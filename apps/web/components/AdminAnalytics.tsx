@@ -76,7 +76,6 @@ const STUDIO_PROMPTS:AgAiPromptStarter[] = [
   },
 ];
 const STUDIO_ADAPTER = createKadokuStudioAdapter();
-// v4 moves Catalog to full width and hides the long Product ID column.
 const STORAGE_KEY = "kadoku-admin-ag-studio-layout-v4";
 const LEGACY_STORAGE_KEYS = [
   "kadoku-admin-ag-studio-layout-v3",
@@ -101,7 +100,7 @@ const CATALOG_FIELDS:AgFieldDefinition[] = [
   {id:"demo_only",name:"Demo only",format:"booleanFormat"},
 ];
 
-/** Studio's documented pre-built report state. No fake values or placeholder rows. */
+/** Studio's default report state, without placeholder data. */
 const DEFAULT_REPORT:AgReportState<KadokuRegistry> = {
   pages:[{
     id:"commerce",
@@ -187,7 +186,7 @@ export default function AdminAnalytics() {
   const [agentEnabled,setAgentEnabled]=useState(false);
   const [agentStatus,setAgentStatus]=useState<"checking"|"ready"|"disabled"|"error">("checking");
 
-  // This is a server decision, not an exposed NEXT_PUBLIC key or a UI toggle.
+  // Admin agent availability is decided server-side.
   useEffect(()=>{
     let cancelled=false;
     api<{enabled:boolean}>("/admin/analytics/agent/status").then(status=>{
@@ -201,8 +200,7 @@ export default function AdminAnalytics() {
     return ()=>{cancelled=true;};
   },[]);
 
-  // Saved layouts contain only chart/widget state. Data remains in the
-  // admin-protected API and is not persisted in browser storage.
+  // Persist layout state, never protected analytics data.
   useEffect(()=>{
     try {
       const current=window.localStorage.getItem(STORAGE_KEY);
@@ -217,13 +215,11 @@ export default function AdminAnalytics() {
               const grid=widgets?.["catalog-stock"] as
                 {type?:string;dataMapping?:{cols?:unknown}}|undefined;
               if(grid?.type==="grid"){
-                // Keep custom charts and filters, but avoid long internal
-                // product IDs in the default inventory table.
+                // Preserve custom charts; hide product IDs in the default table.
                 grid.dataMapping={...grid.dataMapping,cols:[...CATALOG_GRID_COLUMNS]};
               }
 
-              // Only move widgets if the saved layout is the original
-              // five-widget arrangement. Preserve operator/AI custom layouts.
+              // Never overwrite customized layouts during migration.
               const layout=page.widgetLayout as Record<string,{
                 xTrack:number;yTrack:number;xSpan:number;ySpan:number;
               }>|undefined;
@@ -288,8 +284,7 @@ export default function AdminAnalytics() {
   },[]);
 
   const restoreDefault=useCallback(()=>{
-    // Agent-created widgets are saved with the layout. Do not discard them
-    // accidentally when the admin only meant to adjust the dashboard.
+    // Preserve AI-created widgets when editing layouts.
     if(!window.confirm("Restore the default Analytics layout? This will remove your saved dashboard changes, including charts created by AI."))return;
     try {
       window.localStorage.removeItem(STORAGE_KEY);

@@ -7,7 +7,7 @@ import Image from "next/image";
 type Screen = "home" | "ideas" | "details" | "checkout" | "people" | "orders" | "order-detail";
 const checkoutStorageKey = "kadoku_pending_checkout";
 
-/** Days until the next annual occurrence. UTC prevents DST from changing sort order. */
+/** Use UTC to keep annual dates stable across DST. */
 function daysUntilMoment(moment:Occasion, now:Date):number {
   if(moment.month<1 || moment.month>12 || moment.day<1 || moment.day>31)return Infinity;
   const currentYear=now.getFullYear();
@@ -22,13 +22,13 @@ function daysUntilMoment(moment:Occasion, now:Date):number {
   return Infinity;
 }
 
-/** Sort all saved moments for the homepage; do not change their stored order. */
+/** Sort moments for display without mutating source data. */
 function upcomingMoments(moments:Occasion[], now=new Date()):Occasion[] {
   return [...moments].sort((a,b)=>
     daysUntilMoment(a,now)-daysUntilMoment(b,now) || a.id.localeCompare(b.id));
 }
 
-/** Show people with the nearest upcoming birthday first; unknown birthdays last. */
+/** Put unknown birthdays last. */
 function peopleByUpcomingBirthday(people:Recipient[], moments:Occasion[], now=new Date()):Recipient[] {
   const nextBirthday=new Map<string,number>();
   for(const moment of moments){
@@ -61,8 +61,7 @@ const samplePrompts = [
 const DEFAULT_PRODUCT_IMAGE = "/products/default.webp";
 
 
-// This is a demo checkout: country names are free-form, and dial codes remain
-// editable so users outside this suggestion list are not blocked.
+// Keep country and dial code editable beyond the suggestions.
 const dialSuggestions = [
   {country:"Indonesia", dial:"+62"}, {country:"United States", dial:"+1"},
   {country:"United Kingdom", dial:"+44"}, {country:"Netherlands", dial:"+31"},
@@ -82,7 +81,6 @@ const initialShipping: ShippingAddress = {
 };
 
 
-/** A consistent, recognizable voice affordance across home and recommendations. */
 function MicrophoneIcon() {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"
     fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -92,7 +90,7 @@ function MicrophoneIcon() {
   </svg>;
 }
 
-/** Catalog photo → branded illustration → emoji, including when an image fails to load. */
+/** Fall back from product image to illustration, then emoji. */
 function ProductArt({name, emoji, imageUrl, className, sizes}: {
   name: string;
   emoji: string;
@@ -223,8 +221,7 @@ export default function KadokuApp() {
     );
   }, []);
 
-  // A new recommendation set starts at its first card; returning from gift
-  // details restores the previous position instead of jumping to the start.
+  // Preserve carousel position when returning from gift details.
   useEffect(() => { giftScrollPosition.current = 0; }, [response?.recommendations]);
   useEffect(() => {
     if (screen !== "ideas" || !giftScroller.current) return;
@@ -431,7 +428,6 @@ export default function KadokuApp() {
         provider: "google", callbackURL: "/", errorCallbackURL: "/",
       });
       if (result.error) throw new Error(result.error.message || "Google sign-in failed");
-      // Better Auth redirects the browser to Google on success.
     } catch (e) {
       sessionStorage.removeItem(checkoutStorageKey);
       setError(e instanceof Error ? e.message : "Google sign-in failed");
