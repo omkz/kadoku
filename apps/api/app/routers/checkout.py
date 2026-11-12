@@ -13,11 +13,7 @@ router = APIRouter(prefix="/api/v1", tags=["checkout"])
 
 
 def verified_capture(data: dict, expected_minor: int, currency: str) -> str | None:
-    """Accept only the one completed capture for the expected order total.
-
-    Avoid Decimal->int truncation: a fractional cent is not a valid USD
-    capture even if its integer cents would match.
-    """
+    """Require one completed capture with exact currency and cent amount."""
     if not isinstance(data, dict) or data.get("status") != "COMPLETED":
         return None
     units = data.get("purchase_units")
@@ -122,11 +118,7 @@ def my_order(order_id: str, user_id: str = Depends(required_user),
 @router.post("/orders/{order_id}/cancel")
 def cancel_my_order(order_id: str, user_id: str = Depends(required_user),
                     db: Session = Depends(get_db)):
-    """Record the buyer's cancellation of an un-captured Sandbox checkout.
-
-    An atomic status update prevents a late cancellation from overwriting a
-    completed capture. This is *local* checkout cancellation, not a PayPal refund.
-    """
+    """Cancel only pending orders atomically; never refund a captured payment."""
     result = db.execute(
         update(Order)
         .where(Order.id == order_id, Order.user_id == user_id,
@@ -173,8 +165,7 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
 @router.post("/checkout/paypal/capture")
 async def capture_paypal_order(payload: CheckoutCapture, db: Session = Depends(get_db),
                                user_id: str = Depends(required_user)):
-    # Both approval and ownership are required. A PayPal token alone cannot
-    # capture or read another user's order.
+    # Ownership and approval must match; a PayPal token is insufficient.
     order = db.get(Order, payload.order_id)
     if not order or order.user_id != user_id or order.paypal_order_id != payload.paypal_order_id:
         raise HTTPException(404, "Order not found")
@@ -211,8 +202,7 @@ async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
     if db.query(PaymentEvent).filter_by(provider_event_id=event_id).first():
         return {"status": "already_processed"}
     event_type = event.get("event_type", "unknown")
-    # Capture is the authoritative reconciliation step for this starter. Events
-    # are durably logged and deduplicated, but not used to mark orders as paid.
+    # Log/deduplicate webhooks; only verified captures mark orders paid.
     db.add(PaymentEvent(provider_event_id=event_id, event_type=event_type))
     db.commit()
     return {"status": "received"}
