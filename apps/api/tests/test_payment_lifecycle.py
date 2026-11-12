@@ -135,6 +135,35 @@ def test_super_admin_full_refund_is_idempotent(client, database, token_factory, 
     assert audit.json()[0]["amount_minor"] == 6800
 
 
+def test_admin_refund_eligibility_uses_capture_and_fulfillment(
+        client, database, token_factory, set_auth_role):
+    order_id = make_order(database)
+    set_auth_role("test-user-a", "super_admin")
+    url = f"/api/v1/admin/orders/{order_id}"
+    headers = bearer(token_factory)
+
+    assert client.get(url, headers=headers).json()["refundable"] is True
+    with database() as db:
+        order = db.get(Order, order_id)
+        order.paypal_capture_id = None
+        db.commit()
+    assert client.get(url, headers=headers).json()["refundable"] is False
+
+    with database() as db:
+        order = db.get(Order, order_id)
+        order.paypal_capture_id = "CAP-A"
+        order.fulfillment_status = "processing"
+        db.commit()
+    assert client.get(url, headers=headers).json()["refundable"] is False
+
+    with database() as db:
+        order = db.get(Order, order_id)
+        order.fulfillment_status = "unfulfilled"
+        order.status = "refunded"
+        db.commit()
+    assert client.get(url, headers=headers).json()["refundable"] is False
+
+
 def test_partial_refund_remaining_amount(client, database, token_factory, set_auth_role, monkeypatch):
     order_id = make_order(database)
     set_auth_role("test-user-a", "super_admin")
@@ -151,12 +180,16 @@ def test_partial_refund_remaining_amount(client, database, token_factory, set_au
     assert first.status_code == 200, first.text
     with database() as db:
         assert db.get(Order, order_id).status == "partially_refunded"
+    detail = client.get(f"/api/v1/admin/orders/{order_id}", headers=headers)
+    assert detail.status_code == 200 and detail.json()["refundable"] is True
     over = client.post(url, json={"request_key":str(uuid4()),"amount_minor":4301}, headers=headers)
     assert over.status_code == 409
     second = client.post(url, json={"request_key":str(uuid4()),"amount_minor":4300}, headers=headers)
     assert second.status_code == 200, second.text
     with database() as db:
         assert db.get(Order, order_id).status == "refunded"
+    detail = client.get(f"/api/v1/admin/orders/{order_id}", headers=headers)
+    assert detail.status_code == 200 and detail.json()["refundable"] is False
     assert count == 2
 
 
