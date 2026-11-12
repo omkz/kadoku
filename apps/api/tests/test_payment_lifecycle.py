@@ -13,13 +13,13 @@ def bearer(token_factory, subject="test-user-a"):
     return {"Authorization": "Bearer " + token_factory(sub=subject)}
 
 
-def make_order(database, *, status="paid", fulfillment="unfulfilled"):
+def make_order(database, *, status="paid", fulfillment="unfulfilled", paypal_order_id="PAYPAL-ORDER-A"):
     with database() as db:
         product = db.scalar(select(Product).limit(1))
         order = Order(
             user_id="test-user-a", product_id=product.id, price_snapshot_minor=6800,
             currency="USD", status=status, fulfillment_status=fulfillment,
-            paypal_order_id="PAYPAL-ORDER-A",
+            paypal_order_id=paypal_order_id,
             paypal_capture_id="CAP-A" if status != "approval_pending" else None,
         )
         db.add(order)
@@ -221,7 +221,7 @@ def test_refund_rejects_unauthorized_shipped_or_unpaid(client, database, token_f
             raise AssertionError("Invalid refund must not contact PayPal")
     monkeypatch.setattr(payments, "PayPalClient", NoProvider)
     assert client.post(url, json=body, headers=headers).status_code == 409
-    unpaid_id = make_order(database, status="approval_pending")
+    unpaid_id = make_order(database, status="approval_pending", paypal_order_id="PAYPAL-ORDER-B")
     assert client.post(f"/api/v1/admin/orders/{unpaid_id}/refund", json=body, headers=headers).status_code == 409
     assert client.post(url, json={"request_key":"not-a-uuid","amount_minor":6800}, headers=headers).status_code == 422
 
