@@ -94,7 +94,13 @@ async function main() {
       database: pool,
       secret: process.env.BETTER_AUTH_SECRET,
       baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
-      emailAndPassword: {enabled:true, minPasswordLength:8, autoSignIn:false},
+      emailAndPassword: {
+        enabled:true, minPasswordLength:8, autoSignIn:false,
+        customSyntheticUser: ({coreFields, additionalFields, id}) => ({
+          ...coreFields, role:"user", banned:false,
+          banReason:null, banExpires:null, ...additionalFields, id,
+        }),
+      },
       plugins: [admin({defaultRole:"user"})],
     });
     const signup = await auth.api.signUpEmail({
