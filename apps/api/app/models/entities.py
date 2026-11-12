@@ -91,6 +91,7 @@ class PaymentRefund(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), nullable=False, index=True)
     request_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
