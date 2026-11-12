@@ -42,6 +42,8 @@ class GiftCard(BaseModel):
 class GiftResponse(BaseModel):
     summary: str
     recommendations: list[GiftCard]
+    clarification: str | None = None
+    reply_provider: str = "rules"
     remaining_today: int
     provider: str
     context: GiftContext | None = None

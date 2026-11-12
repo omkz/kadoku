@@ -38,6 +38,8 @@ export type GiftContext = {
 export type GiftResponse = {
   summary: string;
   recommendations: Gift[];
+  clarification?: string | null;
+  reply_provider?: string;
   remaining_today: number;
   provider: string;
   context: GiftContext | null;

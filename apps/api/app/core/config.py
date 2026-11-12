@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     better_auth_url: str = "http://localhost:3000"
     guest_quota_secret: str = ""  # required for quota when exposed publicly
-    guest_recommendations_daily: int = 1
+    guest_recommendations_daily: int = 3
     member_recommendations_daily: int = 5
     ai_model: str = ""  # e.g. openai/gpt-5-mini, gemini/gemini-2.5-flash
     ai_timeout_seconds: float = Field(default=12, gt=0, le=30)
