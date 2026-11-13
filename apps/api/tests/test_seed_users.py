@@ -163,7 +163,7 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
         load_accounts(target="staging", environ=env)
     local = load_accounts(target="local", environ=env)
     assert [a.email for a in local] == [
-        "customer@demo.test","admin@demo.test","owner@demo.test"
+        "customer@kadoku.test","admin@kadoku.test","superadmin@kadoku.test"
     ]
     env["DEMO_CUSTOMER_EMAIL"]="alpha@example.test"
     env["DEMO_ADMIN_EMAIL"]="alpha@example.test"
@@ -172,7 +172,7 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
         load_accounts(target="staging", environ=env)
 
 
-def test_staging_user_loader_accepts_12_characters_but_local_requires_16():
+def test_local_and_staging_seed_require_at_least_12_characters():
     env = {
         "DEMO_CUSTOMER_EMAIL": "customer@demo.test",
         "DEMO_ADMIN_EMAIL": "admin@demo.test",
@@ -182,11 +182,12 @@ def test_staging_user_loader_accepts_12_characters_but_local_requires_16():
         "DEMO_OWNER_PASSWORD": "owner1234567",
     }
     assert len(load_accounts(target="staging", environ=env)) == 3
-    with pytest.raises(ValueError, match="16–128"):
-        load_accounts(target="local", environ=env)
+    assert len(load_accounts(target="local", environ=env)) == 3
     env["DEMO_CUSTOMER_PASSWORD"] = "customer123"
     with pytest.raises(ValueError, match="12–128"):
         load_accounts(target="staging", environ=env)
+    with pytest.raises(ValueError, match="12–128"):
+        load_accounts(target="local", environ=env)
 
 
 def test_local_seeding_prompts_only_for_missing_passwords():
@@ -302,3 +303,14 @@ def test_local_env_seed_rejects_remote_or_mismatched_db(tmp_path):
     with pytest.raises(RuntimeError, match="missing or conflicting"):
         local_seed_environment({}, api_database_url=api,
                                web_env_files=(tmp_path / "nonexistent",))
+
+
+def test_local_password_prompt_accepts_twelve_characters():
+    password = "twelve-chars"
+    assert len(password) == 12
+    values = local_password_environment(
+        {"DEMO_ADMIN_PASSWORD": "another-pass", "DEMO_OWNER_PASSWORD": "third-passwd"},
+        interactive=True,
+        prompt=lambda _: password,
+    )
+    assert values["DEMO_CUSTOMER_PASSWORD"] == password
