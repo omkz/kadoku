@@ -23,7 +23,7 @@ read -r -s -p 'Admin password: ' DEMO_ADMIN_PASSWORD; echo; export DEMO_ADMIN_PA
 read -r -s -p 'Owner password: ' DEMO_OWNER_PASSWORD; echo; export DEMO_OWNER_PASSWORD
 ```
 
-Use **three different passwords of 12+ characters**. Substitute the actual confirmed DB/auth hosts:
+Use **three different passwords of 8+ characters**. Substitute the actual confirmed DB/auth hosts:
 
 ```bash
 ENVIRONMENT=staging STAGING_DEMO_SEED_ENABLED=true \
