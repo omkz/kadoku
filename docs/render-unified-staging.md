@@ -10,7 +10,15 @@ One native **Python** Web Service (`kadoku-api`, Starter 512 MB) runs Next.js an
 
 ## Prepare the existing Starter
 
-After merging this PR into `staging`, review and apply the Blueprint settings to the **existing** `kadoku-api` service, not a new paid service.
+After merging this PR into `staging`:
+
+1. In Render, open **New → Blueprint**, connect `omkz/kadoku`, select branch `staging`, and point it at root `render.yaml`.
+2. Choose to **adopt/use the existing** `kadoku-api` Starter service, not replicate it. **Stop if the preview shows a newly created service or a suffixed name**; otherwise it might incur another Starter charge.
+3. Verify the Blueprint preview changes only `kadoku-api`. The existing `kadoku-web` Free service and `kadoku-db` database are deliberately not managed by this Blueprint.
+4. During initial setup, supply the existing `BETTER_AUTH_SECRET` value from `kadoku-web` when prompted. Never commit the value or generate a different secret for the shared auth database.
+5. Review the other environment variables (existing PayPal and AI keys should remain unchanged) and approve the first sync. In Blueprint Settings, turn **Auto Sync off** for future changes. A first Blueprint sync can trigger a deploy even when service auto-deploy is disabled.
+
+If `kadoku-api` is already managed by another Blueprint, modify that Blueprint instead of adopting it into a second one.
 
 | Setting | Value |
 | --- | --- |
@@ -23,7 +31,7 @@ After merging this PR into `staging`, review and apply the Blueprint settings to
 | Health | `/api/health` |
 | Instance | Existing Starter (`0.5c-512mb`) |
 
-Automatic deploy is disabled; manually deploy once the config is reviewed. `render.yaml` configures both DB URLs, Better Auth secret, and pinned Node/Python versions. Startup derives `BETTER_AUTH_URL`, `FRONTEND_URL` and `CORS_ORIGINS` from `RENDER_EXTERNAL_URL` rather than the old web domain.
+Git-based automatic deploy is disabled. After Blueprint adoption, use a manual deploy if the first sync did not deploy the unified version. `render.yaml` configures both DB URLs, requests the existing Better Auth secret during Blueprint setup, and pins Node/Python versions. Startup derives `BETTER_AUTH_URL`, `FRONTEND_URL` and `CORS_ORIGINS` from `RENDER_EXTERNAL_URL` rather than the old web domain.
 
 Retain existing Sandbox credentials and backend API keys in Render's environment. Check `AUTH_DATABASE_URL` and `DATABASE_URL` target the same database. Do **not** point the public `PORT` to FastAPI: that port is for Next.js. Back up staging data before changing the deployment. **Never run `db:reset` on Render**; migrations run in pre-deploy, and no seeding runs automatically.
 

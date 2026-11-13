@@ -1,5 +1,5 @@
 # Staging only: one Starter compute instance for Next.js + FastAPI.
-# Keep the existing Free web service until the unified deployment is verified.
+# Blueprint adopts existing kadoku-api; other services and database remain unchanged.
 services:
   - type: web
     name: kadoku-api
@@ -32,54 +32,12 @@ services:
         value: http://127.0.0.1:8000
       # Startup sets FRONTEND_URL, BETTER_AUTH_URL and CORS_ORIGINS to
       # RENDER_EXTERNAL_URL, and GUEST_COOKIE_SECRET to GUEST_QUOTA_SECRET.
+      # Copy the EXISTING kadoku-web Better Auth secret during initial Blueprint setup.
+      # Never generate a new secret against the existing auth database.
       - key: BETTER_AUTH_SECRET
-        generateValue: true
+        sync: false
       - key: GUEST_QUOTA_SECRET
         generateValue: true
       - key: PAYPAL_MODE
         value: sandbox
 
-  - type: web
-    name: kadoku-web
-    branch: main
-    runtime: node
-    plan: free
-    region: singapore
-    rootDir: apps/web
-    buildCommand: npx --yes pnpm@10.15.0 install --frozen-lockfile && npx --yes pnpm@10.15.0 build
-    startCommand: npx --yes auth@latest migrate --yes --config ./lib/auth.ts && node ./node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port $PORT
-    # Run non-destructive Better Auth migrations on every start; initialDeployHook only runs once.
-    envVars:
-      - key: NODE_VERSION
-        value: 22.22.0
-      - key: AUTH_DATABASE_URL
-        fromDatabase:
-          name: kadoku-db
-          property: connectionString
-      - key: BETTER_AUTH_URL
-        fromService:
-          type: web
-          name: kadoku-web
-          envVarKey: RENDER_EXTERNAL_URL
-      - key: BETTER_AUTH_SECRET
-        generateValue: true
-      - key: GUEST_COOKIE_SECRET
-        fromService:
-          type: web
-          name: kadoku-api
-          envVarKey: GUEST_QUOTA_SECRET
-      - key: API_PROXY_TARGET
-        fromService:
-          type: web
-          name: kadoku-api
-          envVarKey: RENDER_EXTERNAL_URL
-      - key: NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED
-        value: "false"
-
-databases:
-  - name: kadoku-db
-    plan: free
-    region: singapore
-    databaseName: kadoku
-    user: kadoku
-    ipAllowList: []
