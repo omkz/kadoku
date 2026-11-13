@@ -22,7 +22,7 @@ For **local demo accounts**, configure `DEV_SUPER_ADMIN_EMAIL`, `DEV_SUPER_ADMIN
 From the repository root, with the web server running and both services using the same local PostgreSQL database:
 
 ```bash
-pnpm db:seed
+pnpm run db:seed
 ```
 
 This manually provisions three distinct Better Auth test identities (customer, admin, super admin), then adds sample products/orders. No confirmation flag or separate `admin:create` command. Re-running verifies existing credentials and roles; it never overwrites passwords or demotes/promotes unrelated accounts. The command refuses production and non-local targets. Staging requires an explicit target and DB/auth host checks; see [Render staging](render-staging.md).
