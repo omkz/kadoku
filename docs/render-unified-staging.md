@@ -1,49 +1,31 @@
-# Unified Render staging
+# Unified Render staging — keep hackathon URL
 
-One native **Python** Web Service (`kadoku-api`, Starter 512 MB) runs Next.js and FastAPI without Docker. PostgreSQL stays separate.
+Goal: serve **Next.js + FastAPI** from the existing `kadoku-web.onrender.com` service using one native Python Starter. No Docker, no new service, no database migration. PostgreSQL stays Free for now.
 
-- Next.js: public $PORT, Better Auth, pages, and `/backend/*` proxy.
-- FastAPI: private `127.0.0.1:8000`, forwarded by Next.js rewrites.
-- `/api/v1/*` (including PayPal webhooks) also forwards to FastAPI.
-- `/api/health` checks both processes.
-- `kadoku-web` (Free) stays on `main` for rollback; do not delete it yet.
+## Before merging
 
-## Prepare the existing Starter
+- On the **existing Blueprint** currently managing `kadoku-api`, turn **Auto Sync = No**. A Git push can otherwise sync infrastructure immediately.
+- Confirm `kadoku-web` is **not already managed by a different Blueprint**. A Render resource must belong to at most one Blueprint.
+- Keep `kadoku-api` Starter running until the replacement web service is confirmed healthy; brief double billing is prorated.
 
-After merging this PR into `staging`:
+## Cutover
 
-1. In Render, open **New → Blueprint**, connect `omkz/kadoku`, select branch `staging`, and point it at root `render.yaml`.
-2. Choose to **adopt/use the existing** `kadoku-api` Starter service, not replicate it. **Stop if the preview shows a newly created service or a suffixed name**; otherwise it might incur another Starter charge.
-3. Verify the Blueprint preview changes only `kadoku-api`. The existing `kadoku-web` Free service and `kadoku-db` database are deliberately not managed by this Blueprint.
-4. During initial setup, supply the existing `BETTER_AUTH_SECRET` value from `kadoku-web` when prompted. Never commit the value or generate a different secret for the shared auth database.
-5. Review the other environment variables (existing PayPal and AI keys should remain unchanged) and approve the first sync. In Blueprint Settings, turn **Auto Sync off** for future changes. A first Blueprint sync can trigger a deploy even when service auto-deploy is disabled.
+1. Merge the deployment PR into `staging`. Open the **existing Blueprint** and choose **Manual Sync** (do **not** create a second Blueprint).
+2. Review the proposed changes: the **existing `kadoku-web`** must change from Node/Free to Python/Starter using the monorepo-root build, pre-deploy, start scripts and `/api/health`. **Do not proceed** if the preview proposes a new web service, a suffixed name, a database or the wrong workspace.
+3. `kadoku-api` is removed from the Blueprint file, **not automatically deleted** by Render. Leave it active during verification.
+4. In `kadoku-web` → Environment, ensure both database URLs refer to the existing `kadoku-db` PostgreSQL instance. Keep the **existing web `BETTER_AUTH_SECRET`** to preserve auth data and sessions.
+5. Copy backend settings from `kadoku-api` into `kadoku-web` via Render Environment (never Git): `GUEST_QUOTA_SECRET`, `AI_MODEL`, the actually-used Gemini/Google/OpenAI key, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, and `PAYPAL_WEBHOOK_ID` if configured. Optional backend flags such as `STUDIO_AGENT_ENABLED` should be copied only if needed. If placeholders with `sync: false` do not prompt during an existing Blueprint sync, populate them manually in Environment.
+6. Start or repeat the unified deploy on the web service. Its public URL should remain `https://kadoku-web.onrender.com/`. The start script automatically uses that URL as `BETTER_AUTH_URL`, `FRONTEND_URL` and `CORS_ORIGINS`.
 
-If `kadoku-api` is already managed by another Blueprint, modify that Blueprint instead of adopting it into a second one.
+## Verify before retiring old API
 
-| Setting | Value |
-| --- | --- |
-| Branch | `staging` |
-| Runtime | Python |
-| Root directory | Repository root (`.`), not `apps/api` |
-| Build | `bash scripts/render-unified-build.sh` |
-| Pre-deploy | `bash scripts/render-unified-migrate.sh` |
-| Start | `bash scripts/render-unified-start.sh` |
-| Health | `/api/health` |
-| Instance | Existing Starter (`0.5c-512mb`) |
+- `https://kadoku-web.onrender.com/api/health` returns `{"status":"ok","web":"ok","api":"ok"}`.
+- Login, admin, AI gift recommendations, PayPal Sandbox checkout and configured webhook all function.
+- RAM usage and logs are stable on Starter 512 MB; no restarts.
+- Verify the original hackathon URL still opens the correct demo.
 
-Git-based automatic deploy is disabled. After Blueprint adoption, use a manual deploy if the first sync did not deploy the unified version. `render.yaml` configures both DB URLs, requests the existing Better Auth secret during Blueprint setup, and pins Node/Python versions. Startup derives `BETTER_AUTH_URL`, `FRONTEND_URL` and `CORS_ORIGINS` from `RENDER_EXTERNAL_URL` rather than the old web domain.
-
-Retain existing Sandbox credentials and backend API keys in Render's environment. Check `AUTH_DATABASE_URL` and `DATABASE_URL` target the same database. Do **not** point the public `PORT` to FastAPI: that port is for Next.js. Back up staging data before changing the deployment. **Never run `db:reset` on Render**; migrations run in pre-deploy, and no seeding runs automatically.
-
-## Verify before deleting the Free service
-
-1. `https://<kadoku-api-domain>/api/health` must return OK for web and API.
-2. Test login/logout, `/admin`, gift chat, and API proxy at the **unified domain**. Existing web-domain cookies will not transfer.
-3. Test PayPal Sandbox approval and return URL using the unified domain; if configured, update the webhook URL to `/api/v1/webhooks/paypal` on that domain.
-4. Inspect Render logs and RAM under concurrent usage. **512 MB may be insufficient** for Next.js + FastAPI + LiteLLM.
-
-The old `kadoku-web` remains deployed but is **not a transparent live fallback** after the auth issuer changes.
+Only after successful tests, **delete or downgrade the old `kadoku-api`** to stop its Starter billing. First verify the current Blueprint no longer lists it, or a later sync might recreate it. The Free `kadoku-db` still expires under Render's Free database policy.
 
 ## Rollback
 
-Restore `kadoku-api` to `main`, rootDir `apps/api`, build `uv sync --frozen`, and start `uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Set `BETTER_AUTH_URL`, `FRONTEND_URL`, and `CORS_ORIGINS` back to the old web service origin, then redeploy. `kadoku-web` remains on `main` for the split architecture. Re-login may be required.
+If the web deployment fails, keep `kadoku-api` intact (its previously deployed unified version remains the reference). Restore the old `kadoku-web` Node/Free configuration and branch `main` using the previous settings, or reverse this Blueprint change, and redeploy. Existing users may need to sign in again after domain or secret changes. Do **not** run `db:reset`, change database data, or put credentials into Git.
