@@ -11,6 +11,8 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@v6
+      - name: Validate unified Render shell scripts
+        run: bash -n scripts/render-unified-build.sh scripts/render-unified-migrate.sh scripts/render-unified-start.sh
       - name: Check uv lockfile matches default dependencies
         working-directory: apps/api
         run: uv lock --check

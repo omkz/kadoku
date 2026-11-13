@@ -1,8 +1,15 @@
 import type { NextConfig } from "next";
 
+const apiTarget = process.env.API_PROXY_TARGET || "http://localhost:8000";
+
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [{ source: "/backend/:path*", destination: `${process.env.API_PROXY_TARGET || "http://localhost:8000"}/:path*` }];
+    return [
+      // Browser requests stay same-origin. Unified Render serves the API locally.
+      { source: "/backend/:path*", destination: `${apiTarget}/:path*` },
+      // Also preserve direct API/webhook URLs during the single-service cutover.
+      { source: "/api/v1/:path*", destination: `${apiTarget}/api/v1/:path*` },
+    ];
   },
 };
 

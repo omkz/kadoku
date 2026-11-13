@@ -2,6 +2,8 @@
 
 Render is a test environment, not the future production store. PayPal stays in **Sandbox**. Normal deploys run migrations only; they **must not** reset or seed the database.
 
+For the **single Starter service (Next.js + FastAPI)**, follow [unified staging deployment](render-unified-staging.md) first. The commands below run from `apps/api`; in the unified Render Shell, run `cd apps/api` before using them and set `export BETTER_AUTH_URL="$RENDER_EXTERNAL_URL"` for the current authentication origin. The original split API Render Shell already starts in `apps/api`.
+
 ## Seed staging
 
 Run commands from a **trusted kadoku-api Render Shell** after confirming both API and web services are healthy and Better Auth migrations are applied.
@@ -33,7 +35,7 @@ uv run --active python -m app.seed_users --target staging \
 unset DEMO_CUSTOMER_PASSWORD DEMO_ADMIN_PASSWORD DEMO_OWNER_PASSWORD
 ```
 
-This is the same seed implementation as `pnpm db:seed`, invoked from the API-only Render Shell (where pnpm is not installed). It uses Better Auth signup/login, assigns test roles, and adds synthetic catalog, orders, and recipients. It makes **no PayPal transactions**, does not overwrite existing passwords, and is not executed by normal deploys.
+This is the same seed implementation as `pnpm run db:seed`, invoked from the API directory in Render Shell. It uses Better Auth signup/login, assigns test roles, and adds synthetic catalog, orders, and recipients. It makes **no PayPal transactions**, does not overwrite existing passwords, and is not executed by normal deploys.
 
 ## Reset staging (destructive)
 
