@@ -16,7 +16,7 @@ FastAPI routers → services → repositories → SQLAlchemy → PostgreSQL
 - **Authorization:** FastAPI reads the current `user.role` and `user.banned` from Better Auth's database. See [admin roles](admin-roles.md).
 - **AI:** Gemini via LiteLLM can power gift conversations. Catalog filters enforce price, stock, and exclusions; rules-based fallback works without an LLM.
 - **Analytics:** AG Studio uses aggregated admin datasets. Its AI Analyst can use a separate model (Nebius via LiteLLM).
-- **Payments:** PayPal Orders v2 Sandbox, authenticated buyer approval, server-verified capture. Webhooks are verified and logged but do not yet reconcile order state.
+- **Payments:** PayPal Orders v2 Sandbox, authenticated buyer approval, server-verified capture, and full/partial admin refunds with idempotent retry. Webhooks are verified and logged but do not yet reconcile payment state.
 - **Migrations:** Alembic owns application tables; Better Auth owns authentication tables.
 
-Supplier-backed inventory, full refund/reconciliation workflows, and PayPal Live are planned.
+Supplier-backed inventory, automatic webhook reconciliation, refund-aware analytics, and PayPal Live are planned.
