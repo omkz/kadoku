@@ -207,10 +207,19 @@ def provision_demo_users(
                     f"Account {account.label} already exists but is not a healthy demo identity; "
                     "refusing to change it"
                 )
-            user = _auth_post(client, origin, "sign-in/email", {
-                "email": account.email, "password": account.password,
-                "rememberMe": False,
-            })
+            try:
+                user = _auth_post(client, origin, "sign-in/email", {
+                    "email": account.email, "password": account.password,
+                    "rememberMe": False,
+                })
+            except RuntimeError as exc:
+                if "sign-in/email returned HTTP 401" in str(exc):
+                    raise RuntimeError(
+                        f"Existing {account.label} account ({account.email}) rejected the "
+                        "configured password. Use its original password or choose a "
+                        "new demo email in apps/web/.env. No account was overwritten."
+                    ) from None
+                raise
         user_id = user.get("id")
         if not isinstance(user_id, str) or not user_id:
             raise RuntimeError(f"Better Auth did not return a valid user ID for {account.label}")
