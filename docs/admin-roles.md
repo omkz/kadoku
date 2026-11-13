@@ -17,23 +17,15 @@ cd apps/web
 pnpm dlx auth@latest migrate --yes --config ./lib/auth.ts
 ```
 
-To provision a **separate super administrator** in local development, set these values in the untracked `apps/web/.env`:
+For **local demo accounts**, configure `DEV_SUPER_ADMIN_EMAIL`, `DEV_SUPER_ADMIN_PASSWORD`, and optional `DEV_SUPER_ADMIN_NAME` in untracked `apps/web/.env`. The same file holds `DEV_ADMIN_*` and `DEV_CUSTOMER_*` settings. Use distinct passwords of at least 16 characters.
 
-```dotenv
-DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test
-DEV_SUPER_ADMIN_PASSWORD=<unique-16+-character-password>
-DEV_SUPER_ADMIN_NAME=Super Admin
-```
-
-From the repository root, on the branch containing this CLI:
+From the repository root, with the web server running and both services using the same local PostgreSQL database:
 
 ```bash
-pnpm admin:create
+pnpm db:seed
 ```
 
-Like `db:seed`, this command requires no confirmation flag. It uses Better Auth to hash and store the password, then assigns the database-backed `super_admin` role. It is safe to rerun with the same credentials and role; it never overwrites an existing account or resets its password. A conflicting role or password is rejected.
-
-For a regular admin, set `DEV_ADMIN_EMAIL`/`DEV_ADMIN_PASSWORD` and run `pnpm admin:create --role admin`. This CLI only accepts local PostgreSQL and a local Better Auth URL, and never runs automatically on application startup or deployment. Keep `.env` out of version control.
+This manually provisions three distinct Better Auth test identities (customer, admin, super admin), then adds sample products/orders. No confirmation flag or separate `admin:create` command. Re-running verifies existing credentials and roles; it never overwrites passwords or demotes/promotes unrelated accounts. The command refuses production and non-local targets. Staging requires an explicit target and DB/auth host checks; see [Render staging](render-staging.md).
 
 To promote **an existing registered account**, use this command from a trusted API shell:
 
