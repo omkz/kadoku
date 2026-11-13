@@ -19,7 +19,7 @@ Next.js, TypeScript, Better Auth, FastAPI, SQLAlchemy 2, PostgreSQL, PayPal Orde
 
 Requires PostgreSQL, Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22+, and pnpm.
 
-Create a local database:
+Create a local database (the local-only password matches both `.env.example` files):
 
 ```bash
 sudo -u postgres psql -c "CREATE ROLE kadoku LOGIN PASSWORD 'local-only-password';"
@@ -52,7 +52,9 @@ Use the same PostgreSQL database for both apps. `GUEST_COOKIE_SECRET` must match
 
 Open [localhost:3000](http://localhost:3000). API docs: [localhost:8000/docs](http://localhost:8000/docs).
 
-**Optional sample data:** After migrations, configure local demo account credentials in `apps/web/.env`, start Next.js, and run `pnpm db:seed` from the repository root. This creates test accounts, fictional products, and sample orders; it is never run automatically. See [sample data](docs/sample-data.md).
+**Optional sample data:** After migrations, configure demo credentials in `apps/web/.env`, keep Next.js running, and run `pnpm run db:seed` from the repository root. This creates test accounts, fictional products, and sample orders; it never runs automatically. See [sample data](docs/sample-data.md).
+
+**Reset local data:** Stop the API and web servers, then run `pnpm run db:reset` from the repository root. This permanently deletes local Kadoku data before re-running migrations and seeds. See [reset instructions](docs/sample-data.md#reset-destructive).
 
 **Optional integrations:** Set `AI_MODEL` and its key for model-backed responses, or `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` for Sandbox checkout. Keep credentials in the backend `.env`.
 
