@@ -17,7 +17,7 @@ cd apps/web
 pnpm dlx auth@latest migrate --yes --config ./lib/auth.ts
 ```
 
-For **local demo accounts**, configure `DEV_SUPER_ADMIN_EMAIL`, `DEV_SUPER_ADMIN_PASSWORD`, and optional `DEV_SUPER_ADMIN_NAME` in untracked `apps/web/.env`. The same file holds `DEV_ADMIN_*` and `DEV_CUSTOMER_*` settings. Configure each demo account's email and password explicitly in `.env` (12+ characters, distinct passwords). No default emails or passwords are hardcoded in the seed implementation.
+For **local demo accounts**, configure `DEV_SUPER_ADMIN_EMAIL`, `DEV_SUPER_ADMIN_PASSWORD`, and optional `DEV_SUPER_ADMIN_NAME` in untracked `apps/web/.env`. The same file holds `DEV_ADMIN_*` and `DEV_CUSTOMER_*` settings. Configure each demo account's email and password explicitly in `.env` (8+ characters, distinct passwords). No default emails or passwords are hardcoded in the seed implementation.
 
 From the repository root, with the web server running and both services using the same local PostgreSQL database:
 
