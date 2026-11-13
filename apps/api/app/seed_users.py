@@ -5,11 +5,13 @@ Operator-only; not part of app startup or deployment.
 from __future__ import annotations
 
 import argparse
-import getpass
 import os
-import sys
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
+
+from dotenv import dotenv_values
+from sqlalchemy.engine import make_url
 
 import httpx
 from sqlalchemy import text
@@ -32,28 +34,81 @@ class DemoAccount:
 
 
 ACCOUNT_SPECS = (
-    ("CUSTOMER", "Demo Customer", "user", "customer@demo.test"),
-    ("ADMIN", "Demo Admin", "admin", "admin@demo.test"),
-    ("OWNER", "Demo Owner", "super_admin", "owner@demo.test"),
+    ("CUSTOMER", "Demo Customer", "user"),
+    ("ADMIN", "Demo Admin", "admin"),
+    ("OWNER", "Super Admin", "super_admin"),
 )
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+WEB_ENV_FILES = (
+    WEB_DIR / ".env", WEB_DIR / ".env.development",
+    WEB_DIR / ".env.local", WEB_DIR / ".env.development.local",
+)
+
+
+def local_seed_environment(
+    environ: dict[str, str], *,
+    api_database_url: str,
+    web_env_files: tuple[Path, ...] = WEB_ENV_FILES,
+) -> dict[str, str]:
+    """Read local test accounts from untracked web env; refuse DB mismatches."""
+    values: dict[str, str] = {}
+    web_databases: set[str] = set()
+    for path in web_env_files:
+        if not path.is_file():
+            continue
+        parsed = dotenv_values(path)
+        if parsed.get("AUTH_DATABASE_URL"):
+            web_databases.add(str(parsed["AUTH_DATABASE_URL"]))
+        values.update({key: str(value) for key, value in parsed.items()
+                       if value is not None})
+    if environ.get("AUTH_DATABASE_URL"):
+        web_databases.add(environ["AUTH_DATABASE_URL"])
+    values.update(environ)
+
+    if len(web_databases) != 1:
+        raise RuntimeError(
+            "Configure the same AUTH_DATABASE_URL in the local web environment; "
+            "missing or conflicting database targets"
+        )
+    api_url, web_url = make_url(api_database_url), make_url(next(iter(web_databases)))
+    if (not api_url.drivername.startswith("postgresql")
+            or not web_url.drivername.startswith("postgresql")
+            or not web_url.host or web_url.host.lower() not in LOCAL_HOSTS
+            or not api_url.host
+            or (api_url.host.lower(), api_url.port or 5432, api_url.database)
+            != (web_url.host.lower(), web_url.port or 5432, web_url.database)):
+        raise RuntimeError(
+            "Local FastAPI DATABASE_URL and Better Auth AUTH_DATABASE_URL "
+            "must point to the same localhost PostgreSQL database"
+        )
+
+    aliases = {"CUSTOMER": "CUSTOMER", "ADMIN": "ADMIN",
+               "OWNER": "SUPER_ADMIN"}
+    for suffix, alias in aliases.items():
+        for field in ("EMAIL", "PASSWORD", "NAME"):
+            key = f"DEMO_{suffix}_{field}"
+            if not values.get(key) and values.get(f"DEV_{alias}_{field}"):
+                values[key] = values[f"DEV_{alias}_{field}"]
+    return values
+
 
 
 def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
     accounts = []
-    for suffix, name, role, local_email in ACCOUNT_SPECS:
+    for suffix, name, role in ACCOUNT_SPECS:
         raw_email = environ.get(f"DEMO_{suffix}_EMAIL", "")
         email = raw_email.strip().lower()
         if not email:
-            if target == "staging":
-                raise ValueError(f"DEMO_{suffix}_EMAIL is required for staging")
-            email = local_email
-        if not email or "@" not in email or any(char.isspace() for char in email):
+            raise ValueError(f"DEMO_{suffix}_EMAIL is required")
+        if "@" not in email or any(char.isspace() for char in email):
             raise ValueError(f"Invalid DEMO_{suffix}_EMAIL")
+        name = environ.get(f"DEMO_{suffix}_NAME", "").strip() or name
+        if len(name) > 120:
+            raise ValueError(f"DEMO_{suffix}_NAME must be at most 120 characters")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
-        minimum = 12 if target == "staging" else 16
-        if len(password) < minimum or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain {minimum}–128 characters")
+        if len(password) < 8 or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 8–128 characters")
         accounts.append(DemoAccount(suffix, name, email, role, password))
     if len({entry.email for entry in accounts}) != len(accounts):
         raise ValueError("Demo user emails must be unique")
@@ -61,28 +116,6 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
         raise ValueError("Each demo account must have a different password")
     return accounts
 
-
-def local_password_environment(
-    environ: dict[str, str], *, interactive: bool, prompt=getpass.getpass,
-) -> dict[str, str]:
-    """Prompt for missing local passwords without generating or logging them."""
-    values = dict(environ)
-    missing = [suffix for suffix, _, _, _ in ACCOUNT_SPECS
-               if not values.get(f"DEMO_{suffix}_PASSWORD")]
-    if missing and not interactive:
-        raise ValueError(
-            "Missing demo passwords in non-interactive mode: set "
-            + ", ".join(f"DEMO_{suffix}_PASSWORD" for suffix in missing)
-        )
-    for suffix in missing:
-        password = prompt(f"Password for {suffix.lower()} demo (16+ characters): ")
-        if len(password) < 16 or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 16–128 characters")
-        confirm = prompt(f"Repeat {suffix.lower()} demo password: ")
-        if password != confirm:
-            raise ValueError(f"Passwords did not match for {suffix.lower()} demo")
-        values[f"DEMO_{suffix}_PASSWORD"] = password
-    return values
 
 
 def verify_auth_origin(*, target: str, auth_url: str, expected_auth_host: str | None) -> str:
@@ -174,10 +207,19 @@ def provision_demo_users(
                     f"Account {account.label} already exists but is not a healthy demo identity; "
                     "refusing to change it"
                 )
-            user = _auth_post(client, origin, "sign-in/email", {
-                "email": account.email, "password": account.password,
-                "rememberMe": False,
-            })
+            try:
+                user = _auth_post(client, origin, "sign-in/email", {
+                    "email": account.email, "password": account.password,
+                    "rememberMe": False,
+                })
+            except RuntimeError as exc:
+                if "sign-in/email returned HTTP 401" in str(exc):
+                    raise RuntimeError(
+                        f"Existing {account.label} account ({account.email}) rejected the "
+                        "configured password. Use its original password or choose a "
+                        "new demo email in apps/web/.env. No account was overwritten."
+                    ) from None
+                raise
         user_id = user.get("id")
         if not isinstance(user_id, str) or not user_id:
             raise RuntimeError(f"Better Auth did not return a valid user ID for {account.label}")
@@ -224,22 +266,18 @@ def main() -> None:
         description="Provision demo accounts via Better Auth (never production)"
     )
     parser.add_argument("--target", choices=["local", "staging"], default="local")
-    parser.add_argument("--confirm-demo-users", action="store_true")
-    parser.add_argument("--confirm-staging", action="store_true")
     parser.add_argument("--expected-db-host")
     parser.add_argument("--expected-db-name")
     parser.add_argument("--expected-auth-host")
     parser.add_argument("--skip-business-data", action="store_true")
     args = parser.parse_args()
-    if not args.confirm_demo_users:
-        parser.error("--confirm-demo-users is required")
     if args.target == "staging" and (
-        not args.confirm_staging or not args.expected_db_host or
-        not args.expected_db_name or not args.expected_auth_host
+        not args.expected_db_host or not args.expected_db_name
+        or not args.expected_auth_host
     ):
         parser.error(
-            "Staging requires --confirm-staging, --expected-db-host, "
-            "--expected-db-name, and --expected-auth-host"
+            "Staging requires --expected-db-host, --expected-db-name, "
+            "and --expected-auth-host"
         )
     try:
         with SessionLocal() as db:
@@ -254,11 +292,13 @@ def main() -> None:
                 target=args.target, auth_url=get_settings().better_auth_url,
                 expected_auth_host=args.expected_auth_host,
             )
-            # Staging credentials must be supplied explicitly.
-            account_env = (
-                local_password_environment(os.environ, interactive=sys.stdin.isatty())
-                if args.target == "local" else os.environ
-            )
+            # Staging accounts come from the operator's shell, never web env files.
+            if args.target == "local":
+                account_env = local_seed_environment(
+                    os.environ, api_database_url=str(db.get_bind().url),
+                )
+            else:
+                account_env = os.environ
             accounts = load_accounts(target=args.target, environ=account_env)
             with httpx.Client(timeout=15.0, follow_redirects=False) as client:
                 provisioned = provision_demo_users(

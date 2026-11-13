@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import required_admin
 from app.db.session import get_db
-from app.models import FulfillmentEvent, Order, Product
+from app.models import FulfillmentEvent, Order, PaymentRefund, Product
 
 router = APIRouter(
     prefix="/api/v1/admin",
@@ -228,6 +228,7 @@ class FulfillmentAuditOut(BaseModel):
 
 
 class AdminOrderDetail(AdminOrderOut):
+    refundable: bool
     shipping_address: dict | None
     tracking_carrier: str | None
     tracking_number: str | None
@@ -381,6 +382,11 @@ def admin_order_detail(db: Session, order: Order, product_name: str) -> AdminOrd
         status=order.status, fulfillment_status=order.fulfillment_status,
         buyer_ref="Guest" if not order.user_id else "…" + order.user_id[-8:],
         created_at=order.created_at,
+        refundable=(
+            bool(order.paypal_capture_id) and order.currency == "USD"
+            and order.status in ("paid", "partially_refunded")
+            and order.fulfillment_status == "unfulfilled"
+        ),
         shipping_address=order.shipping_address,
         tracking_carrier=order.tracking_carrier, tracking_number=order.tracking_number,
         shipped_at=order.shipped_at, delivered_at=order.delivered_at,
@@ -421,6 +427,16 @@ def update_fulfillment(
         raise HTTPException(404, "Order not found")
     if order.status != "paid":
         raise HTTPException(409, "Payment must be captured before order processing")
+    # A pending refund may have reached PayPal; do not start fulfillment until
+    # its outcome is known. Locking the order serializes with refund initiation.
+    pending_refund = db.scalar(
+        select(PaymentRefund.id).where(
+            PaymentRefund.order_id == order.id,
+            PaymentRefund.status == "pending",
+        )
+    )
+    if pending_refund is not None:
+        raise HTTPException(409, "Resolve the pending refund before fulfillment")
     current = order.fulfillment_status
     if payload.expected_status != current:
         raise HTTPException(409, "Order status changed; refresh before editing")

@@ -1,1 +1,1 @@
-from .entities import Product, Recipient, Occasion, RecommendationUsage, Order, PaymentEvent, FulfillmentEvent
+from .entities import Product, Recipient, Occasion, RecommendationUsage, Order, PaymentEvent, PaymentRefund, FulfillmentEvent

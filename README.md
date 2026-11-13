@@ -8,7 +8,7 @@ Kadoku helps people find gifts through conversation instead of browsing endless 
 
 - Mobile-first gift discovery with one top pick, up to two alternatives, and catalog-grounded refinements.
 - Saved recipients, birthdays, gift notes, and order history.
-- PayPal Orders v2 checkout with server-verified capture (Sandbox).
+- PayPal Orders v2 Sandbox checkout, capture recovery, and admin refunds.
 - Admin catalog, order management, and AG Studio analytics with AI Analyst.
 
 ## Stack
@@ -52,7 +52,7 @@ Use the same PostgreSQL database for both apps. `GUEST_COOKIE_SECRET` must match
 
 Open [localhost:3000](http://localhost:3000). API docs: [localhost:8000/docs](http://localhost:8000/docs).
 
-**Optional sample data:** Run `uv run python -m app.seed` from `apps/api` to populate 100 fictional products. See [sample data](docs/sample-data.md) for sample orders and accounts.
+**Optional sample data:** After migrations, configure local demo account credentials in `apps/web/.env`, start Next.js, and run `pnpm db:seed` from the repository root. This creates test accounts, fictional products, and sample orders; it is never run automatically. See [sample data](docs/sample-data.md).
 
 **Optional integrations:** Set `AI_MODEL` and its key for model-backed responses, or `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` for Sandbox checkout. Keep credentials in the backend `.env`.
 
@@ -71,7 +71,7 @@ External AI calls and PayPal approval/capture require separate manual tests.
 
 ## Roadmap
 
-- Complete Sandbox payment lifecycle: refunds, reconciliation, and failure recovery.
+- Automate webhook reconciliation and strengthen payment failure monitoring.
 - Integrate real suppliers, inventory, shipping, tax, and fulfillment.
 - Add production safeguards, then enable PayPal Live.
 

@@ -38,7 +38,18 @@ export default function PaymentReturn() {
         setStatus("paid");
         setDetail("Your PayPal Sandbox payment was captured. This was a test transaction; no gift will be shipped.");
       })
-      .catch(err => {
+      .catch(async err => {
+        // A capture can succeed at PayPal even if the response to Kadoku is lost.
+        try {
+          const recovered = await api<Result>(`/orders/${encodeURIComponent(orderId)}/reconcile`, "POST");
+          if (recovered.status === "paid" && recovered.order_id === orderId) {
+            setStatus("paid");
+            setDetail("Your PayPal Sandbox payment was confirmed. This was a test transaction; no gift will be shipped.");
+            return;
+          }
+        } catch {
+          // Leave the payment unconfirmed until PayPal verifies it.
+        }
         setStatus("error");
         setDetail(err instanceof Error ? err.message : "We could not confirm the payment. Try again.");
         inFlight.current = false;

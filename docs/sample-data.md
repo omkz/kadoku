@@ -2,41 +2,32 @@
 
 All fixtures are **optional** and intended for local/staging tests. Seeded `paid` orders are fictional, not PayPal captures. Seeds do not run automatically on app startup.
 
-## Sample products only
+## Local
 
-```bash
-cd apps/api
-uv run python -m app.seed
+Complete database migrations and start Next.js so Better Auth is available. Configure `apps/api/.env` and `apps/web/.env` to use the **same local PostgreSQL database**.
+
+Set all three **email/password pairs** in untracked `apps/web/.env` (three distinct passwords, 8+ characters each):
+
+```dotenv
+DEV_CUSTOMER_EMAIL=customer@kadoku.test
+DEV_CUSTOMER_PASSWORD=<unique-local-password-8+>
+DEV_ADMIN_EMAIL=admin@kadoku.test
+DEV_ADMIN_PASSWORD=<another-local-password-8+>
+DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test
+DEV_SUPER_ADMIN_PASSWORD=<third-local-password-8+>
 ```
 
-Adds up to 100 catalog examples without replacing existing products. The current Sandbox checkout accepts only demo-only USD products.
+The values above are examples only. Email addresses and passwords are not hardcoded in the seed implementation. Missing values make seeding fail rather than creating an unintended account.
 
-## Full local sample environment
-
-Use the same local PostgreSQL database for Better Auth and FastAPI, and complete migrations from the [README](../README.md#local-setup). Start the Next.js app so Better Auth can create test users.
-
-From the **repository root**:
+Run manually from the **repository root**:
 
 ```bash
 pnpm db:seed
 ```
 
-Prompts for three distinct 16+ character passwords. Creates/verifies the following test accounts, along with sample products, orders, recipients, and birthdays:
+This creates/verifies the customer, admin, and super admin via Better Auth and seeds 100 fictional products, sample orders, recipients, and birthdays. It is idempotent and does not replace existing passwords, roles, products or customer orders. No interactive credential prompts: configure all pairs explicitly in `.env`.
 
-| Account | Role |
-| --- | --- |
-| `customer@demo.test` | `user` |
-| `admin@demo.test` | `admin` |
-| `owner@demo.test` | `super_admin` |
-
-The seed checks existing account identity before reuse and does not overwrite passwords. You can supply `DEMO_CUSTOMER_PASSWORD`, `DEMO_ADMIN_PASSWORD`, and `DEMO_OWNER_PASSWORD` in a local shell for non-interactive runs.
-
-To add sample orders/recipients to another **already registered** test account:
-
-```bash
-cd apps/api
-uv run python -m app.seed_sample --email test-user@example.test --confirm-demo-data
-```
+No separate product seed or `admin:create` command is needed. Synthetic `paid` orders have **no PayPal capture** and cannot be refunded.
 
 ## Reset (destructive)
 

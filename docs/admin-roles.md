@@ -6,7 +6,7 @@ Kadoku uses Better Auth for identity and **database-backed roles** for authoriza
 | --- | --- |
 | `user` | Storefront and own account |
 | `admin` | Products, orders, analytics |
-| `super_admin` | Admin features and Team role management |
+| `super_admin` | Admin features, refunds, and Team role management |
 
 ## Setup
 
@@ -17,7 +17,17 @@ cd apps/web
 pnpm dlx auth@latest migrate --yes --config ./lib/auth.ts
 ```
 
-Create a normal account through Kadoku, then promote **that existing account** from a trusted API shell:
+For **local demo accounts**, configure `DEV_SUPER_ADMIN_EMAIL`, `DEV_SUPER_ADMIN_PASSWORD`, and optional `DEV_SUPER_ADMIN_NAME` in untracked `apps/web/.env`. The same file holds `DEV_ADMIN_*` and `DEV_CUSTOMER_*` settings. Configure each demo account's email and password explicitly in `.env` (8+ characters, distinct passwords). No default emails or passwords are hardcoded in the seed implementation.
+
+From the repository root, with the web server running and both services using the same local PostgreSQL database:
+
+```bash
+pnpm db:seed
+```
+
+This manually provisions three distinct Better Auth test identities (customer, admin, super admin), then adds sample products/orders. No confirmation flag or separate `admin:create` command. Re-running verifies existing credentials and roles; it never overwrites passwords or demotes/promotes unrelated accounts. The command refuses production and non-local targets. Staging requires an explicit target and DB/auth host checks; see [Render staging](render-staging.md).
+
+To promote **an existing registered account**, use this command from a trusted API shell:
 
 ```bash
 cd apps/api

@@ -7,7 +7,7 @@ from sqlalchemy import func, select, text
 from app.core.config import get_settings
 from app.models import Order, Recipient
 from app.seed_users import (
-    DemoAccount, load_accounts, local_password_environment,
+    DemoAccount, load_accounts, local_seed_environment,
     provision_demo_users, verify_auth_origin,
 )
 
@@ -109,7 +109,7 @@ def test_password_mismatch_never_promotes_existing_account(database):
                              with_business_data=False)
         bad = demo_accounts()
         bad[1] = DemoAccount("ADMIN","Demo Admin","admin@demo.test","admin","wrong-password-but-long")
-        with pytest.raises(RuntimeError, match="HTTP 401"):
+        with pytest.raises(RuntimeError, match=r"Existing ADMIN account .* rejected the configured password"):
             provision_demo_users(db, client=fake, accounts=bad,
                                  with_business_data=False)
         assert db.scalar(text('SELECT role FROM "user" WHERE email = :email').bindparams(
@@ -161,10 +161,8 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
            for key in ("CUSTOMER","ADMIN","OWNER")}
     with pytest.raises(ValueError, match="DEMO_CUSTOMER_EMAIL"):
         load_accounts(target="staging", environ=env)
-    local = load_accounts(target="local", environ=env)
-    assert [a.email for a in local] == [
-        "customer@demo.test","admin@demo.test","owner@demo.test"
-    ]
+    with pytest.raises(ValueError, match="DEMO_CUSTOMER_EMAIL"):
+        load_accounts(target="local", environ=env)
     env["DEMO_CUSTOMER_EMAIL"]="alpha@example.test"
     env["DEMO_ADMIN_EMAIL"]="alpha@example.test"
     env["DEMO_OWNER_EMAIL"]="gamma@example.test"
@@ -172,55 +170,22 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
         load_accounts(target="staging", environ=env)
 
 
-def test_staging_user_loader_accepts_12_characters_but_local_requires_16():
+def test_local_and_staging_seed_require_at_least_8_characters():
     env = {
         "DEMO_CUSTOMER_EMAIL": "customer@demo.test",
         "DEMO_ADMIN_EMAIL": "admin@demo.test",
         "DEMO_OWNER_EMAIL": "owner@demo.test",
-        "DEMO_CUSTOMER_PASSWORD": "customer1234",
-        "DEMO_ADMIN_PASSWORD": "admin1234567",
-        "DEMO_OWNER_PASSWORD": "owner1234567",
+        "DEMO_CUSTOMER_PASSWORD": "passwrd8",
+        "DEMO_ADMIN_PASSWORD": "passwrd9",
+        "DEMO_OWNER_PASSWORD": "passwda0",
     }
+    assert len(load_accounts(target="local", environ=env)) == 3
     assert len(load_accounts(target="staging", environ=env)) == 3
-    with pytest.raises(ValueError, match="16–128"):
+    env["DEMO_CUSTOMER_PASSWORD"] = "short7!"
+    with pytest.raises(ValueError, match="8–128"):
         load_accounts(target="local", environ=env)
-    env["DEMO_CUSTOMER_PASSWORD"] = "customer123"
-    with pytest.raises(ValueError, match="12–128"):
+    with pytest.raises(ValueError, match="8–128"):
         load_accounts(target="staging", environ=env)
-
-
-def test_local_seeding_prompts_only_for_missing_passwords():
-    secret = "a-local-secret-at-least-sixteen"
-    inputs = iter([secret, secret, secret + "-admin", secret + "-admin"])
-    requested = []
-    def prompt(message):
-        requested.append(message)
-        return next(inputs)
-
-    configured = local_password_environment(
-        {"DEMO_CUSTOMER_PASSWORD": "existing-customer-password-16+"},
-        interactive=True,
-        prompt=prompt,
-    )
-    assert configured["DEMO_CUSTOMER_PASSWORD"] == "existing-customer-password-16+"
-    assert configured["DEMO_ADMIN_PASSWORD"] == secret
-    assert configured["DEMO_OWNER_PASSWORD"] == secret + "-admin"
-    assert len(requested) == 4
-    assert len(load_accounts(target="local", environ=configured)) == 3
-
-
-def test_noninteractive_local_requires_passwords_without_prompting():
-    with pytest.raises(ValueError, match="DEMO_ADMIN_PASSWORD"):
-        local_password_environment(
-            {"DEMO_CUSTOMER_PASSWORD": "existing-customer-password-16+"},
-            interactive=False,
-        )
-
-
-def test_local_password_confirmation_must_match():
-    responses = iter(["first-password-16-characters", "different-password-16-characters"])
-    with pytest.raises(ValueError, match="did not match"):
-        local_password_environment({}, interactive=True, prompt=lambda _: next(responses))
 
 
 
@@ -253,3 +218,77 @@ def test_two_account_staging_helper_reuses_better_auth_and_refuses_owner_role(da
         )
         assert again == provisioned
         assert len(fake.passwords) == 2
+
+
+def test_local_env_seed_reads_web_credentials_without_prompting(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/kadoku\n"
+        "DEV_CUSTOMER_EMAIL=customer@kadoku.test\n"
+        "DEV_CUSTOMER_PASSWORD=customer-password-2026\n"
+        "DEV_ADMIN_EMAIL=admin@kadoku.test\n"
+        "DEV_ADMIN_PASSWORD=admin-password-for-2026\n"
+        "DEV_ADMIN_NAME=Demo Admin\n"
+        "DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test\n"
+        "DEV_SUPER_ADMIN_PASSWORD=owner-password-for-2026\n"
+        "DEV_SUPER_ADMIN_NAME=Super Admin\n"
+    )
+    values = local_seed_environment(
+        {}, api_database_url="postgresql+psycopg://kadoku:pw@localhost:5432/kadoku",
+        web_env_files=(env_file,),
+    )
+    assert values["DEMO_OWNER_EMAIL"] == "superadmin@kadoku.test"
+    assert values["DEMO_OWNER_NAME"] == "Super Admin"
+    assert values["DEMO_OWNER_PASSWORD"] == "owner-password-for-2026"
+    assert [u.role for u in load_accounts(target="local", environ=values)] == [
+        "user", "admin", "super_admin",
+    ]
+
+
+def test_local_env_seed_rejects_remote_or_mismatched_db(tmp_path):
+    web_env = tmp_path / ".env"
+    api = "postgresql+psycopg://kadoku:pw@localhost:5432/kadoku"
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@other-host:5432/kadoku\n")
+    with pytest.raises(RuntimeError, match="same localhost"):
+        local_seed_environment({}, api_database_url=api, web_env_files=(web_env,))
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/other_db\n")
+    with pytest.raises(RuntimeError, match="same localhost"):
+        local_seed_environment({}, api_database_url=api, web_env_files=(web_env,))
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/kadoku\n")
+    local_override = {"AUTH_DATABASE_URL": "postgresql://kadoku:pw@localhost:5432/not_kadoku"}
+    with pytest.raises(RuntimeError, match="missing or conflicting"):
+        local_seed_environment(local_override, api_database_url=api,
+                               web_env_files=(web_env,))
+
+    with pytest.raises(RuntimeError, match="missing or conflicting"):
+        local_seed_environment({}, api_database_url=api,
+                               web_env_files=(tmp_path / "nonexistent",))
+
+
+
+def test_local_seed_requires_configured_email_and_password(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/kadoku\n"
+        "DEV_CUSTOMER_EMAIL=customer@kadoku.test\n"
+        "DEV_CUSTOMER_PASSWORD=customer-test-password\n"
+        "DEV_ADMIN_EMAIL=admin@kadoku.test\n"
+        "DEV_ADMIN_PASSWORD=admin-test-password\n"
+        "DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test\n"
+        "DEV_SUPER_ADMIN_PASSWORD=super-admin-test-password\n"
+    )
+    values = local_seed_environment(
+        {}, api_database_url="postgresql+psycopg://kadoku:pw@localhost:5432/kadoku",
+        web_env_files=(env_file,),
+    )
+    assert len(load_accounts(target="local", environ=values)) == 3
+    del values["DEMO_OWNER_EMAIL"]
+    with pytest.raises(ValueError, match="DEMO_OWNER_EMAIL"):
+        load_accounts(target="local", environ=values)
+    values["DEMO_OWNER_EMAIL"] = "superadmin@kadoku.test"
+    del values["DEMO_OWNER_PASSWORD"]
+    with pytest.raises(ValueError, match="DEMO_OWNER_PASSWORD"):
+        load_accounts(target="local", environ=values)

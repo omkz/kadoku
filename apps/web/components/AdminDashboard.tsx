@@ -5,6 +5,7 @@ import {api, dollars} from "@/lib/api";
 import {authClient} from "@/lib/auth-client";
 import dynamic from "next/dynamic";
 import AdminTeam from "./AdminTeam";
+import AdminOrderRefunds from "./AdminOrderRefunds";
 
 // AG Studio runs in the browser; never server-render its DOM-bound engine.
 const AdminAnalytics = dynamic(()=>import("./AdminAnalytics"), {ssr:false});
@@ -51,6 +52,7 @@ type AdminOrder = {
   created_at: string;
 };
 type AdminOrderDetail = AdminOrder & {
+  refundable: boolean;
   shipping_address: Record<string,string|null>|null;
   tracking_carrier: string|null;
   tracking_number: string|null;
@@ -288,6 +290,15 @@ export default function AdminDashboard() {
     }
   }
 
+  async function refreshOrder(orderId: string) {
+    try {
+      const updated = await api<AdminOrderDetail>("/admin/orders/" + encodeURIComponent(orderId));
+      setSelectedOrder(current => current?.id === orderId ? updated : current);
+    } catch (error) {
+      setOrderDetailError(error instanceof Error ? error.message : "Could not refresh the order.");
+    }
+  }
+
   async function advanceFulfillment() {
     if (!selectedOrder || transitionBusy) return;
     const target = nextFulfillment[selectedOrder.fulfillment_status];
@@ -509,6 +520,13 @@ export default function AdminDashboard() {
               {selectedOrder.shipping_address?.phone_number && <p className="admin-muted">Phone: {selectedOrder.shipping_address.phone_country_code} {selectedOrder.shipping_address.phone_number}</p>}
             </div>
           </div>
+          <AdminOrderRefunds key={selectedOrder.id} order={selectedOrder}
+            isSuperAdmin={(session?.user as {role?:string}|undefined)?.role==="super_admin"}
+            onUpdated={() => {
+              void refreshOrder(selectedOrder.id);
+              void loadOrders();
+              void loadOverview();
+            }}/>
           {selectedOrder.status==="paid" && nextFulfillment[selectedOrder.fulfillment_status] && <>
             <h3 className="admin-action-heading">Next step: {orderStatus(nextFulfillment[selectedOrder.fulfillment_status])}</h3>
             {nextFulfillment[selectedOrder.fulfillment_status]==="shipped" && <div className="admin-form-grid">
@@ -519,7 +537,7 @@ export default function AdminDashboard() {
             {transitionError && <p className="admin-error" role="alert">{transitionError}</p>}
             <div className="admin-editor-actions"><button type="button" className="admin-primary" disabled={transitionBusy} onClick={()=>void advanceFulfillment()}>{transitionBusy?"Updating…":"Mark "+orderStatus(nextFulfillment[selectedOrder.fulfillment_status])}</button></div>
           </>}
-          {selectedOrder.status!=="paid" && <p className="admin-disclaimer">This order cannot be processed until payment is captured. Payment status cannot be overridden here.</p>}
+          {selectedOrder.status!=="paid" && <p className="admin-disclaimer">Fulfillment actions require payment status Paid. Refunds are handled separately.</p>}
           <div className="admin-history"><h3>Activity history</h3>
             {selectedOrder.history.length===0 ? <p className="admin-muted">No fulfillment actions yet.</p>
             : <ol>{selectedOrder.history.map((entry,index)=><li key={index}><strong>{orderStatus(entry.from_status)} → {orderStatus(entry.to_status)}</strong> · {dateLabel(entry.created_at)} · {entry.actor_ref}{entry.note && <p>{entry.note}</p>}</li>)}</ol>}
@@ -529,7 +547,8 @@ export default function AdminDashboard() {
           <div className="admin-toolbar"><label className="admin-small-label" htmlFor="admin-order-status">Payment status</label>
             <select id="admin-order-status" value={orderStatusFilter} onChange={e=>{setOrderStatusFilter(e.target.value);setOrdersPage(1);}}>
               <option value="">All statuses</option><option value="pending">Pending</option>
-              <option value="approval_pending">Approval pending</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option>
+              <option value="approval_pending">Approval pending</option><option value="paid">Paid</option>
+              <option value="partially_refunded">Partially refunded</option><option value="refunded">Refunded</option><option value="cancelled">Cancelled</option>
             </select>
             <label className="admin-small-label" htmlFor="admin-fulfillment">Fulfillment</label>
             <select id="admin-fulfillment" value={fulfillmentFilter} onChange={e=>{setFulfillmentFilter(e.target.value);setOrdersPage(1);}}>
@@ -559,7 +578,7 @@ export default function AdminDashboard() {
             <button className="admin-outline" type="button" disabled={ordersPage*pageSize>=orders.total||ordersBusy} onClick={()=>setOrdersPage(p=>p+1)}>Next</button>
           </div></div></>}
         </div>
-        <p className="admin-disclaimer">Payment status is controlled by PayPal capture, not by staff actions. Fulfillment changes are logged separately. Sandbox orders are for workflow testing only—no real shipment is initiated.</p>
+        <p className="admin-disclaimer">Payment status follows verified PayPal captures and refunds; staff cannot override it. Fulfillment changes are logged separately. Sandbox orders are for workflow testing only—no real shipment is initiated.</p>
       </>}
       {section==="customers" && <>
         <div className="admin-section-heading"><div><p className="admin-overline">BUYER ACTIVITY</p><h1>Customers</h1><p>Signed-in buyers with order history. Registered users without orders are not included.</p></div>

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from decimal import Decimal, InvalidOperation
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.auth import required_user
 from app.db.session import get_db
@@ -116,25 +116,43 @@ def my_order(order_id: str, user_id: str = Depends(required_user),
     }
 
 @router.post("/orders/{order_id}/cancel")
-def cancel_my_order(order_id: str, user_id: str = Depends(required_user),
-                    db: Session = Depends(get_db)):
-    """Cancel only pending orders atomically; never refund a captured payment."""
-    result = db.execute(
-        update(Order)
-        .where(Order.id == order_id, Order.user_id == user_id,
-               Order.status == "approval_pending")
-        .values(status="cancelled")
-    )
-    if result.rowcount:
-        db.commit()
-        return {"order_id": order_id, "status": "cancelled"}
-    db.rollback()
-    order = db.get(Order, order_id)
-    if order is None or order.user_id != user_id:
+async def cancel_my_order(order_id: str, user_id: str = Depends(required_user),
+                          db: Session = Depends(get_db)):
+    """Never report cancellation before checking whether PayPal captured payment."""
+    order = db.scalar(select(Order).where(
+        Order.id == order_id, Order.user_id == user_id
+    ).with_for_update())
+    if order is None:
         raise HTTPException(404, "Order not found")
     if order.status == "cancelled":
         return {"order_id": order_id, "status": "cancelled"}
-    raise HTTPException(409, "This order cannot be cancelled from checkout")
+    if order.status != "approval_pending":
+        raise HTTPException(409, "This order cannot be cancelled from checkout")
+
+    if order.paypal_order_id:
+        data = await PayPalClient().get_order(order.paypal_order_id)
+        if not isinstance(data, dict) or data.get("id") != order.paypal_order_id:
+            raise HTTPException(502, "PayPal order reference mismatch")
+        units = data.get("purchase_units")
+        if not isinstance(units, list) or len(units) != 1 or not isinstance(units[0], dict):
+            raise HTTPException(502, "Unexpected PayPal order details")
+        unit = units[0]
+        if unit.get("custom_id") != order.id or unit.get("reference_id") != order.id:
+            raise HTTPException(409, "PayPal order ownership mismatch")
+        if data.get("status") == "COMPLETED":
+            capture_id = verified_capture(data, order.price_snapshot_minor, order.currency)
+            if not capture_id:
+                raise HTTPException(409, "PayPal capture needs manual reconciliation")
+            order.paypal_capture_id = capture_id
+            order.status = "paid"
+            db.commit()
+            raise HTTPException(409, "Payment already captured; order marked paid")
+        if data.get("status") not in ("CREATED", "APPROVED"):
+            raise HTTPException(409, "PayPal checkout cannot be safely cancelled")
+
+    order.status = "cancelled"
+    db.commit()
+    return {"order_id": order.id, "status": "cancelled"}
 
 
 @router.post("/checkout/paypal/orders", response_model=CheckoutCreated)
@@ -166,7 +184,7 @@ async def create_paypal_order(payload: CheckoutStart, db: Session = Depends(get_
 async def capture_paypal_order(payload: CheckoutCapture, db: Session = Depends(get_db),
                                user_id: str = Depends(required_user)):
     # Ownership and approval must match; a PayPal token is insufficient.
-    order = db.get(Order, payload.order_id)
+    order = db.scalar(select(Order).where(Order.id == payload.order_id).with_for_update())
     if not order or order.user_id != user_id or order.paypal_order_id != payload.paypal_order_id:
         raise HTTPException(404, "Order not found")
     if order.status == "paid":

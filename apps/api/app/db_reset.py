@@ -28,7 +28,7 @@ WEB_DIR = ROOT_DIR / "apps" / "web"
 KNOWN_TABLES = frozenset({
     "alembic_version",
     "products", "recipients", "occasions", "recommendation_usage",
-    "orders", "payment_events", "fulfillment_events",
+    "orders", "payment_events", "payment_refunds", "fulfillment_events",
     "user", "session", "account", "verification", "jwks",
 })
 SYSTEM_DATABASES = {"postgres", "template0", "template1"}
@@ -275,7 +275,7 @@ def main() -> None:
             try:
                 wait_for_better_auth(process, origin=origin, logfile=logfile)
                 run_checked(
-                    ["uv", "run", "python", "-m", "app.seed_users", "--confirm-demo-users"],
+                    ["uv", "run", "python", "-m", "app.seed_users"],
                     cwd=API_DIR, env=child_env,
                 )
             finally:
