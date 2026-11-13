@@ -17,13 +17,23 @@ cd apps/web
 pnpm dlx auth@latest migrate --yes --config ./lib/auth.ts
 ```
 
-To create a **new admin account** in local development, run from the repository root:
+To provision a **separate super administrator** in local development, set these values in the untracked `apps/web/.env`:
 
-```bash
-pnpm admin:create --email superadmin@kadoku.test --role super_admin --confirm
+```dotenv
+DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test
+DEV_SUPER_ADMIN_PASSWORD=<unique-16+-character-password>
+DEV_SUPER_ADMIN_NAME=Super Admin
 ```
 
-The CLI prompts for a password (no plaintext password in arguments), uses Better Auth to create the account, then assigns its database-backed role. It refuses to overwrite existing accounts and is disabled with a production environment. Use `--role admin` for a regular admin account. Run only from a trusted shell with `apps/web/.env` configured; no seeding or app startup automatically creates a super admin.
+From the repository root, on the branch containing this CLI:
+
+```bash
+pnpm admin:create
+```
+
+Like `db:seed`, this command requires no confirmation flag. It uses Better Auth to hash and store the password, then assigns the database-backed `super_admin` role. It is safe to rerun with the same credentials and role; it never overwrites an existing account or resets its password. A conflicting role or password is rejected.
+
+For a regular admin, set `DEV_ADMIN_EMAIL`/`DEV_ADMIN_PASSWORD` and run `pnpm admin:create --role admin`. This CLI only accepts local PostgreSQL and a local Better Auth URL, and never runs automatically on application startup or deployment. Keep `.env` out of version control.
 
 To promote **an existing registered account**, use this command from a trusted API shell:
 
