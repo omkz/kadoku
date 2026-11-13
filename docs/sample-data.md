@@ -6,15 +6,12 @@ All fixtures are **optional** and intended for local/staging tests. Seeded `paid
 
 Complete database migrations and start Next.js so Better Auth is available. Configure `apps/api/.env` and `apps/web/.env` to use the **same local PostgreSQL database**.
 
-In untracked `apps/web/.env`, set the three email/password pairs: `DEV_CUSTOMER_*`, `DEV_ADMIN_*`, and `DEV_SUPER_ADMIN_*` (16+ characters per password, all different). For example:
+The three default local emails are defined in `apps/api/app/seed_users.py`: `customer@kadoku.test`, `admin@kadoku.test`, and `superadmin@kadoku.test`. In untracked `apps/web/.env`, set three **different 12+ character passwords**; overriding email is optional:
 
 ```dotenv
-DEV_CUSTOMER_EMAIL=customer@kadoku.test
-DEV_CUSTOMER_PASSWORD=<unique-local-password-16+>
-DEV_ADMIN_EMAIL=admin@kadoku.test
-DEV_ADMIN_PASSWORD=<another-local-password-16+>
-DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test
-DEV_SUPER_ADMIN_PASSWORD=<third-local-password-16+>
+DEV_CUSTOMER_PASSWORD=<unique-local-password-12+>
+DEV_ADMIN_PASSWORD=<another-local-password-12+>
+DEV_SUPER_ADMIN_PASSWORD=<third-local-password-12+>
 ```
 
 Run manually from the **repository root**:
