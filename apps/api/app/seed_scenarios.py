@@ -128,7 +128,7 @@ def seed_demo_scenarios(
         .order_by(Product.category, Product.name, Product.id)
     ).all())
     if not products:
-        raise RuntimeError("No demo products found. Run 'uv run python -m app.seed' first.")
+        raise RuntimeError("No demo products found. Run 'pnpm db:seed' from the repository root.")
 
     scope = ("account/" + user_id) if user_id else "analytics"
     created = {"orders": 0, "recipients": 0, "occasions": 0}
