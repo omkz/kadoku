@@ -6,15 +6,15 @@ All fixtures are **optional** and intended for local/staging tests. Seeded `paid
 
 Complete database migrations and start Next.js so Better Auth is available. Configure `apps/api/.env` and `apps/web/.env` to use the **same local PostgreSQL database**.
 
-Set all three **email/password pairs** in untracked `apps/web/.env` (three distinct passwords, 12+ characters each):
+Set all three **email/password pairs** in untracked `apps/web/.env` (three distinct passwords, 8+ characters each):
 
 ```dotenv
 DEV_CUSTOMER_EMAIL=customer@kadoku.test
-DEV_CUSTOMER_PASSWORD=<unique-local-password-12+>
+DEV_CUSTOMER_PASSWORD=<unique-local-password-8+>
 DEV_ADMIN_EMAIL=admin@kadoku.test
-DEV_ADMIN_PASSWORD=<another-local-password-12+>
+DEV_ADMIN_PASSWORD=<another-local-password-8+>
 DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test
-DEV_SUPER_ADMIN_PASSWORD=<third-local-password-12+>
+DEV_SUPER_ADMIN_PASSWORD=<third-local-password-8+>
 ```
 
 The values above are examples only. Email addresses and passwords are not hardcoded in the seed implementation. Missing values make seeding fail rather than creating an unintended account.
