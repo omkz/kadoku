@@ -22,7 +22,7 @@ The values above are examples only. Email addresses and passwords are not hardco
 Run manually from the **repository root**:
 
 ```bash
-pnpm db:seed
+pnpm run db:seed
 ```
 
 This creates/verifies the customer, admin, and super admin via Better Auth and seeds 100 fictional products, sample orders, recipients, and birthdays. It is idempotent and does not replace existing passwords, roles, products or customer orders. No interactive credential prompts: configure all pairs explicitly in `.env`.
@@ -31,10 +31,10 @@ No separate product seed or `admin:create` command is needed. Synthetic `paid` o
 
 ## Reset (destructive)
 
-Stop the app servers. Configure `apps/api/.env` and `apps/web/.env.local` to point to the **same dedicated local PostgreSQL database**, then from the repository root:
+Stop the API and web servers. Ensure `apps/api/.env` and the web environment (`apps/web/.env` or `.env.local`) point to the **same dedicated local PostgreSQL database**, with no conflicting `AUTH_DATABASE_URL` values, then from the repository root:
 
 ```bash
-pnpm db:reset
+pnpm run db:reset
 ```
 
 This deletes local Kadoku accounts, orders, and catalog changes; it then migrates and seeds new test data. The CLI verifies the local target and refuses remote/staging/production databases or unknown database objects. Never use it against real data.
