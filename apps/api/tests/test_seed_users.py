@@ -170,23 +170,22 @@ def test_staging_requires_supplied_unique_accounts_and_strong_passwords():
         load_accounts(target="staging", environ=env)
 
 
-def test_local_and_staging_seed_require_at_least_12_characters():
+def test_local_and_staging_seed_require_at_least_8_characters():
     env = {
         "DEMO_CUSTOMER_EMAIL": "customer@demo.test",
         "DEMO_ADMIN_EMAIL": "admin@demo.test",
         "DEMO_OWNER_EMAIL": "owner@demo.test",
-        "DEMO_CUSTOMER_PASSWORD": "customer1234",
-        "DEMO_ADMIN_PASSWORD": "admin1234567",
-        "DEMO_OWNER_PASSWORD": "owner1234567",
+        "DEMO_CUSTOMER_PASSWORD": "passwrd8",
+        "DEMO_ADMIN_PASSWORD": "passwrd9",
+        "DEMO_OWNER_PASSWORD": "passwda0",
     }
-    assert len(load_accounts(target="staging", environ=env)) == 3
     assert len(load_accounts(target="local", environ=env)) == 3
-    env["DEMO_CUSTOMER_PASSWORD"] = "customer123"
-    with pytest.raises(ValueError, match="12–128"):
-        load_accounts(target="staging", environ=env)
-    with pytest.raises(ValueError, match="12–128"):
+    assert len(load_accounts(target="staging", environ=env)) == 3
+    env["DEMO_CUSTOMER_PASSWORD"] = "short7!"
+    with pytest.raises(ValueError, match="8–128"):
         load_accounts(target="local", environ=env)
-
+    with pytest.raises(ValueError, match="8–128"):
+        load_accounts(target="staging", environ=env)
 
 
 
