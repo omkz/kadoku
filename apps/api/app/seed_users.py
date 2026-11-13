@@ -9,7 +9,11 @@ import getpass
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
+
+from dotenv import dotenv_values
+from sqlalchemy.engine import make_url
 
 import httpx
 from sqlalchemy import text
@@ -37,6 +41,59 @@ ACCOUNT_SPECS = (
     ("OWNER", "Demo Owner", "super_admin", "owner@demo.test"),
 )
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+WEB_ENV_FILES = (
+    WEB_DIR / ".env", WEB_DIR / ".env.development",
+    WEB_DIR / ".env.local", WEB_DIR / ".env.development.local",
+)
+
+
+def local_seed_environment(
+    environ: dict[str, str], *,
+    api_database_url: str,
+    web_env_files: tuple[Path, ...] = WEB_ENV_FILES,
+) -> dict[str, str]:
+    """Read local test accounts from untracked web env; refuse DB mismatches."""
+    values: dict[str, str] = {}
+    web_databases: set[str] = set()
+    for path in web_env_files:
+        if not path.is_file():
+            continue
+        parsed = dotenv_values(path)
+        if parsed.get("AUTH_DATABASE_URL"):
+            web_databases.add(str(parsed["AUTH_DATABASE_URL"]))
+        values.update({key: str(value) for key, value in parsed.items()
+                       if value is not None})
+    if environ.get("AUTH_DATABASE_URL"):
+        web_databases.add(environ["AUTH_DATABASE_URL"])
+    values.update(environ)
+
+    if len(web_databases) != 1:
+        raise RuntimeError(
+            "Configure the same AUTH_DATABASE_URL in the local web environment; "
+            "missing or conflicting database targets"
+        )
+    api_url, web_url = make_url(api_database_url), make_url(next(iter(web_databases)))
+    if (not api_url.drivername.startswith("postgresql")
+            or not web_url.drivername.startswith("postgresql")
+            or not web_url.host or web_url.host.lower() not in LOCAL_HOSTS
+            or not api_url.host
+            or (api_url.host.lower(), api_url.port or 5432, api_url.database)
+            != (web_url.host.lower(), web_url.port or 5432, web_url.database)):
+        raise RuntimeError(
+            "Local FastAPI DATABASE_URL and Better Auth AUTH_DATABASE_URL "
+            "must point to the same localhost PostgreSQL database"
+        )
+
+    aliases = {"CUSTOMER": "CUSTOMER", "ADMIN": "ADMIN",
+               "OWNER": "SUPER_ADMIN"}
+    for suffix, alias in aliases.items():
+        for field in ("EMAIL", "PASSWORD", "NAME"):
+            key = f"DEMO_${suffix}_${field}"
+            if not values.get(key) and values.get(f"DEV_${alias}_${field}"):
+                values[key] = values[f"DEV_${alias}_${field}"]
+    return values
+
 
 
 def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
@@ -50,6 +107,9 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
             email = local_email
         if not email or "@" not in email or any(char.isspace() for char in email):
             raise ValueError(f"Invalid DEMO_{suffix}_EMAIL")
+        name = environ.get(f"DEMO_{suffix}_NAME", "").strip() or name
+        if len(name) > 120:
+            raise ValueError(f"DEMO_{suffix}_NAME must be at most 120 characters")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
         minimum = 12 if target == "staging" else 16
         if len(password) < minimum or len(password) > 128:
@@ -224,22 +284,18 @@ def main() -> None:
         description="Provision demo accounts via Better Auth (never production)"
     )
     parser.add_argument("--target", choices=["local", "staging"], default="local")
-    parser.add_argument("--confirm-demo-users", action="store_true")
-    parser.add_argument("--confirm-staging", action="store_true")
     parser.add_argument("--expected-db-host")
     parser.add_argument("--expected-db-name")
     parser.add_argument("--expected-auth-host")
     parser.add_argument("--skip-business-data", action="store_true")
     args = parser.parse_args()
-    if not args.confirm_demo_users:
-        parser.error("--confirm-demo-users is required")
     if args.target == "staging" and (
-        not args.confirm_staging or not args.expected_db_host or
-        not args.expected_db_name or not args.expected_auth_host
+        not args.expected_db_host or not args.expected_db_name
+        or not args.expected_auth_host
     ):
         parser.error(
-            "Staging requires --confirm-staging, --expected-db-host, "
-            "--expected-db-name, and --expected-auth-host"
+            "Staging requires --expected-db-host, --expected-db-name, "
+            "and --expected-auth-host"
         )
     try:
         with SessionLocal() as db:
@@ -254,11 +310,16 @@ def main() -> None:
                 target=args.target, auth_url=get_settings().better_auth_url,
                 expected_auth_host=args.expected_auth_host,
             )
-            # Staging credentials must be supplied explicitly.
-            account_env = (
-                local_password_environment(os.environ, interactive=sys.stdin.isatty())
-                if args.target == "local" else os.environ
-            )
+            # Staging accounts come from the operator's shell, never web env files.
+            if args.target == "local":
+                local_values = local_seed_environment(
+                    os.environ, api_database_url=str(db.get_bind().url),
+                )
+                account_env = local_password_environment(
+                    local_values, interactive=sys.stdin.isatty(),
+                )
+            else:
+                account_env = os.environ
             accounts = load_accounts(target=args.target, environ=account_env)
             with httpx.Client(timeout=15.0, follow_redirects=False) as client:
                 provisioned = provision_demo_users(
