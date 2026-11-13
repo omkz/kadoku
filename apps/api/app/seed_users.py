@@ -5,9 +5,7 @@ Operator-only; not part of app startup or deployment.
 from __future__ import annotations
 
 import argparse
-import getpass
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -36,9 +34,9 @@ class DemoAccount:
 
 
 ACCOUNT_SPECS = (
-    ("CUSTOMER", "Demo Customer", "user", "customer@kadoku.test"),
-    ("ADMIN", "Demo Admin", "admin", "admin@kadoku.test"),
-    ("OWNER", "Super Admin", "super_admin", "superadmin@kadoku.test"),
+    ("CUSTOMER", "Demo Customer", "user"),
+    ("ADMIN", "Demo Admin", "admin"),
+    ("OWNER", "Super Admin", "super_admin"),
 )
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -98,22 +96,19 @@ def local_seed_environment(
 
 def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
     accounts = []
-    for suffix, name, role, local_email in ACCOUNT_SPECS:
+    for suffix, name, role in ACCOUNT_SPECS:
         raw_email = environ.get(f"DEMO_{suffix}_EMAIL", "")
         email = raw_email.strip().lower()
         if not email:
-            if target == "staging":
-                raise ValueError(f"DEMO_{suffix}_EMAIL is required for staging")
-            email = local_email
-        if not email or "@" not in email or any(char.isspace() for char in email):
+            raise ValueError(f"DEMO_{suffix}_EMAIL is required")
+        if "@" not in email or any(char.isspace() for char in email):
             raise ValueError(f"Invalid DEMO_{suffix}_EMAIL")
         name = environ.get(f"DEMO_{suffix}_NAME", "").strip() or name
         if len(name) > 120:
             raise ValueError(f"DEMO_{suffix}_NAME must be at most 120 characters")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
-        minimum = 12
-        if len(password) < minimum or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain {minimum}–128 characters")
+        if len(password) < 12 or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 12–128 characters")
         accounts.append(DemoAccount(suffix, name, email, role, password))
     if len({entry.email for entry in accounts}) != len(accounts):
         raise ValueError("Demo user emails must be unique")
@@ -121,28 +116,6 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
         raise ValueError("Each demo account must have a different password")
     return accounts
 
-
-def local_password_environment(
-    environ: dict[str, str], *, interactive: bool, prompt=getpass.getpass,
-) -> dict[str, str]:
-    """Prompt for missing local passwords without generating or logging them."""
-    values = dict(environ)
-    missing = [suffix for suffix, _, _, _ in ACCOUNT_SPECS
-               if not values.get(f"DEMO_{suffix}_PASSWORD")]
-    if missing and not interactive:
-        raise ValueError(
-            "Missing demo passwords in non-interactive mode: set "
-            + ", ".join(f"DEMO_{suffix}_PASSWORD" for suffix in missing)
-        )
-    for suffix in missing:
-        password = prompt(f"Password for {suffix.lower()} demo (12+ characters): ")
-        if len(password) < 12 or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 12–128 characters")
-        confirm = prompt(f"Repeat {suffix.lower()} demo password: ")
-        if password != confirm:
-            raise ValueError(f"Passwords did not match for {suffix.lower()} demo")
-        values[f"DEMO_{suffix}_PASSWORD"] = password
-    return values
 
 
 def verify_auth_origin(*, target: str, auth_url: str, expected_auth_host: str | None) -> str:
@@ -312,11 +285,8 @@ def main() -> None:
             )
             # Staging accounts come from the operator's shell, never web env files.
             if args.target == "local":
-                local_values = local_seed_environment(
+                account_env = local_seed_environment(
                     os.environ, api_database_url=str(db.get_bind().url),
-                )
-                account_env = local_password_environment(
-                    local_values, interactive=sys.stdin.isatty(),
                 )
             else:
                 account_env = os.environ
