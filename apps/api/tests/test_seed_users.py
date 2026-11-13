@@ -109,7 +109,7 @@ def test_password_mismatch_never_promotes_existing_account(database):
                              with_business_data=False)
         bad = demo_accounts()
         bad[1] = DemoAccount("ADMIN","Demo Admin","admin@demo.test","admin","wrong-password-but-long")
-        with pytest.raises(RuntimeError, match="HTTP 401"):
+        with pytest.raises(RuntimeError, match=r"Existing ADMIN account .* rejected the configured password"):
             provision_demo_users(db, client=fake, accounts=bad,
                                  with_business_data=False)
         assert db.scalar(text('SELECT role FROM "user" WHERE email = :email').bindparams(
