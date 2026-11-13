@@ -275,7 +275,7 @@ def main() -> None:
             try:
                 wait_for_better_auth(process, origin=origin, logfile=logfile)
                 run_checked(
-                    ["uv", "run", "python", "-m", "app.seed_users", "--confirm-demo-users"],
+                    ["uv", "run", "python", "-m", "app.seed_users"],
                     cwd=API_DIR, env=child_env,
                 )
             finally:
