@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.models import Order, Recipient
 from app.seed_users import (
     DemoAccount, load_accounts, local_password_environment,
-    provision_demo_users, verify_auth_origin,
+    local_seed_environment, provision_demo_users, verify_auth_origin,
 )
 
 
@@ -253,3 +253,52 @@ def test_two_account_staging_helper_reuses_better_auth_and_refuses_owner_role(da
         )
         assert again == provisioned
         assert len(fake.passwords) == 2
+
+
+def test_local_env_seed_reads_web_credentials_without_prompting(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/kadoku\n"
+        "DEV_CUSTOMER_EMAIL=customer@kadoku.test\n"
+        "DEV_CUSTOMER_PASSWORD=customer-password-2026\n"
+        "DEV_ADMIN_EMAIL=admin@kadoku.test\n"
+        "DEV_ADMIN_PASSWORD=admin-password-for-2026\n"
+        "DEV_ADMIN_NAME=Demo Admin\n"
+        "DEV_SUPER_ADMIN_EMAIL=superadmin@kadoku.test\n"
+        "DEV_SUPER_ADMIN_PASSWORD=owner-password-for-2026\n"
+        "DEV_SUPER_ADMIN_NAME=Super Admin\n"
+    )
+    values = local_seed_environment(
+        {}, api_database_url="postgresql+psycopg://kadoku:pw@localhost:5432/kadoku",
+        web_env_files=(env_file,),
+    )
+    assert values["DEMO_OWNER_EMAIL"] == "superadmin@kadoku.test"
+    assert values["DEMO_OWNER_NAME"] == "Super Admin"
+    assert values["DEMO_OWNER_PASSWORD"] == "owner-password-for-2026"
+    assert [u.role for u in load_accounts(target="local", environ=values)] == [
+        "user", "admin", "super_admin",
+    ]
+    assert local_password_environment(values, interactive=False) == values
+
+
+def test_local_env_seed_rejects_remote_or_mismatched_db(tmp_path):
+    web_env = tmp_path / ".env"
+    api = "postgresql+psycopg://kadoku:pw@localhost:5432/kadoku"
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@other-host:5432/kadoku\n")
+    with pytest.raises(RuntimeError, match="same localhost"):
+        local_seed_environment({}, api_database_url=api, web_env_files=(web_env,))
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/other_db\n")
+    with pytest.raises(RuntimeError, match="same localhost"):
+        local_seed_environment({}, api_database_url=api, web_env_files=(web_env,))
+
+    web_env.write_text("AUTH_DATABASE_URL=postgresql://kadoku:pw@localhost:5432/kadoku\n")
+    local_override = {"AUTH_DATABASE_URL": "postgresql://kadoku:pw@localhost:5432/not_kadoku"}
+    with pytest.raises(RuntimeError, match="missing or conflicting"):
+        local_seed_environment(local_override, api_database_url=api,
+                               web_env_files=(web_env,))
+
+    with pytest.raises(RuntimeError, match="missing or conflicting"):
+        local_seed_environment({}, api_database_url=api,
+                               web_env_files=(tmp_path / "nonexistent",))
