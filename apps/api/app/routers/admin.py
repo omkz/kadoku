@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import required_admin
 from app.db.session import get_db
-from app.models import FulfillmentEvent, Order, Product
+from app.models import FulfillmentEvent, Order, PaymentRefund, Product
 
 router = APIRouter(
     prefix="/api/v1/admin",
@@ -427,6 +427,16 @@ def update_fulfillment(
         raise HTTPException(404, "Order not found")
     if order.status != "paid":
         raise HTTPException(409, "Payment must be captured before order processing")
+    # A pending refund may have reached PayPal; do not start fulfillment until
+    # its outcome is known. Locking the order serializes with refund initiation.
+    pending_refund = db.scalar(
+        select(PaymentRefund.id).where(
+            PaymentRefund.order_id == order.id,
+            PaymentRefund.status == "pending",
+        )
+    )
+    if pending_refund is not None:
+        raise HTTPException(409, "Resolve the pending refund before fulfillment")
     current = order.fulfillment_status
     if payload.expected_status != current:
         raise HTTPException(409, "Order status changed; refresh before editing")
