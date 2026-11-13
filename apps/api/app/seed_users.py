@@ -36,9 +36,9 @@ class DemoAccount:
 
 
 ACCOUNT_SPECS = (
-    ("CUSTOMER", "Demo Customer", "user", "customer@demo.test"),
-    ("ADMIN", "Demo Admin", "admin", "admin@demo.test"),
-    ("OWNER", "Demo Owner", "super_admin", "owner@demo.test"),
+    ("CUSTOMER", "Demo Customer", "user", "customer@kadoku.test"),
+    ("ADMIN", "Demo Admin", "admin", "admin@kadoku.test"),
+    ("OWNER", "Super Admin", "super_admin", "superadmin@kadoku.test"),
 )
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -111,7 +111,7 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
         if len(name) > 120:
             raise ValueError(f"DEMO_{suffix}_NAME must be at most 120 characters")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
-        minimum = 12 if target == "staging" else 16
+        minimum = 12
         if len(password) < minimum or len(password) > 128:
             raise ValueError(f"DEMO_{suffix}_PASSWORD must contain {minimum}–128 characters")
         accounts.append(DemoAccount(suffix, name, email, role, password))
@@ -135,9 +135,9 @@ def local_password_environment(
             + ", ".join(f"DEMO_{suffix}_PASSWORD" for suffix in missing)
         )
     for suffix in missing:
-        password = prompt(f"Password for {suffix.lower()} demo (16+ characters): ")
-        if len(password) < 16 or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 16–128 characters")
+        password = prompt(f"Password for {suffix.lower()} demo (12+ characters): ")
+        if len(password) < 12 or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 12–128 characters")
         confirm = prompt(f"Repeat {suffix.lower()} demo password: ")
         if password != confirm:
             raise ValueError(f"Passwords did not match for {suffix.lower()} demo")
