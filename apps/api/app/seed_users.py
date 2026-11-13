@@ -89,9 +89,9 @@ def local_seed_environment(
                "OWNER": "SUPER_ADMIN"}
     for suffix, alias in aliases.items():
         for field in ("EMAIL", "PASSWORD", "NAME"):
-            key = f"DEMO_${suffix}_${field}"
-            if not values.get(key) and values.get(f"DEV_${alias}_${field}"):
-                values[key] = values[f"DEV_${alias}_${field}"]
+            key = f"DEMO_{suffix}_{field}"
+            if not values.get(key) and values.get(f"DEV_{alias}_{field}"):
+                values[key] = values[f"DEV_{alias}_{field}"]
     return values
 
 
