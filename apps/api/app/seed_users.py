@@ -107,8 +107,8 @@ def load_accounts(*, target: str, environ: dict[str, str]) -> list[DemoAccount]:
         if len(name) > 120:
             raise ValueError(f"DEMO_{suffix}_NAME must be at most 120 characters")
         password = environ.get(f"DEMO_{suffix}_PASSWORD", "")
-        if len(password) < 12 or len(password) > 128:
-            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 12–128 characters")
+        if len(password) < 8 or len(password) > 128:
+            raise ValueError(f"DEMO_{suffix}_PASSWORD must contain 8–128 characters")
         accounts.append(DemoAccount(suffix, name, email, role, password))
     if len({entry.email for entry in accounts}) != len(accounts):
         raise ValueError("Demo user emails must be unique")
