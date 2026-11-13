@@ -1,8 +1,9 @@
-# Staging only: one Starter compute instance for Next.js + FastAPI.
-# Blueprint adopts existing kadoku-api; other services and database remain unchanged.
+# Single Starter for both Next.js and FastAPI at the submitted hackathon URL.
+# This Blueprint targets the EXISTING kadoku-web service; do not replicate it.
+# kadoku-api and kadoku-db are deliberately excluded and must be managed separately.
 services:
   - type: web
-    name: kadoku-api
+    name: kadoku-web
     runtime: python
     plan: 0.5c-512mb
     region: singapore
@@ -32,12 +33,24 @@ services:
         value: http://127.0.0.1:8000
       # Startup sets FRONTEND_URL, BETTER_AUTH_URL and CORS_ORIGINS to
       # RENDER_EXTERNAL_URL, and GUEST_COOKIE_SECRET to GUEST_QUOTA_SECRET.
-      # Copy the EXISTING kadoku-web Better Auth secret during initial Blueprint setup.
-      # Never generate a new secret against the existing auth database.
+      # Preserve the existing web service Better Auth secret.
       - key: BETTER_AUTH_SECRET
         sync: false
+      # Copy the existing kadoku-api value manually, via Render Environment.
       - key: GUEST_QUOTA_SECRET
-        generateValue: true
+        sync: false
+      # AI and PayPal credentials must be copied from the old API service
+      # through Render Environment; never put secrets in source control.
+      - key: AI_MODEL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
       - key: PAYPAL_MODE
         value: sandbox
 
