@@ -6,7 +6,7 @@
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit && node --check scripts/admin-create.mjs && node --env-file-if-exists=.env scripts/admin-create.mjs --help",
+    "typecheck": "tsc --noEmit && node --check scripts/admin-create.mjs && node --test scripts/admin-create.test.mjs && node --env-file-if-exists=.env scripts/admin-create.mjs --help",
     "admin:create": "node --env-file-if-exists=.env scripts/admin-create.mjs"
   },
   "dependencies": {
