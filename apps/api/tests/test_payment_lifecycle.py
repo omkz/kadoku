@@ -240,6 +240,36 @@ def test_unknown_provider_outcome_keeps_retry_key(client, database, token_factor
     assert keys == [body["request_key"], body["request_key"]]
 
 
+
+def test_fulfillment_blocks_pending_refund_then_allows_failed_attempt(
+        client, database, token_factory, set_auth_role):
+    order_id = make_order(database)
+    set_auth_role("test-user-a", "admin")
+    with database() as db:
+        db.add(PaymentRefund(
+            order_id=order_id, request_key=str(uuid4()),
+            actor_user_id="test-super-admin", amount_minor=100,
+            currency="USD", status="pending",
+        ))
+        db.commit()
+    url = f"/api/v1/admin/orders/{order_id}/fulfillment"
+    payload = {"expected_status": "unfulfilled", "to_status": "processing"}
+    headers = bearer(token_factory)
+
+    blocked = client.post(url, json=payload, headers=headers)
+    assert blocked.status_code == 409, blocked.text
+    assert "pending refund" in blocked.json()["detail"]
+    with database() as db:
+        assert db.get(Order, order_id).fulfillment_status == "unfulfilled"
+        refund = db.scalar(select(PaymentRefund).where(PaymentRefund.order_id == order_id))
+        refund.status = "failed"
+        db.commit()
+
+    allowed = client.post(url, json=payload, headers=headers)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["fulfillment_status"] == "processing"
+
+
 def test_refund_rejects_unauthorized_shipped_or_unpaid(client, database, token_factory, set_auth_role, monkeypatch):
     paid_id = make_order(database, fulfillment="shipped")
     headers = bearer(token_factory)
