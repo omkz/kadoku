@@ -2,7 +2,6 @@
 from sqlalchemy import select
 from uuid import NAMESPACE_URL, uuid5
 from app.catalog.demo_products import EXTRA_SAMPLES
-from app.db.session import SessionLocal
 from app.models import Product
 
 SAMPLES = [
@@ -76,6 +75,3 @@ def seed(db):
     db.commit()
     return added
 
-if __name__ == "__main__":
-    with SessionLocal() as db:
-        print(f"Seeded {seed(db)} demo-only products")
