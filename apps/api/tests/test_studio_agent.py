@@ -424,7 +424,7 @@ def test_groq_failure_message_is_safe():
 def test_studio_nebius_provider_key_and_api_base(
     client, token_factory, monkeypatch, set_auth_role,
 ):
-    """Nebius credits are used only by the admin Studio provider, not gift AI."""
+    """Studio uses its own configured model, with Nebius credentials from settings."""
     ready(monkeypatch, set_auth_role)
     settings = get_settings()
     monkeypatch.setattr(settings, "studio_agent_model", "nebius/zai-org/GLM-5.3-Flash")
