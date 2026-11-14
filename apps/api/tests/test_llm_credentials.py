@@ -18,11 +18,12 @@ from app.integrations.llm import extract_intent_json
     ("gemini/gemini-2.5-flash", "gemini_api_key", "test-gemini-secret"),
     ("gemini/gemini-2.5-flash", "google_api_key", "test-google-secret"),
     ("openai/gpt-5-mini", "openai_api_key", "test-openai-secret"),
+    ("nebius/zai-org/GLM-5.3-Flash", "nebius_api_key", "test-nebius-secret"),
 ])
 def test_env_settings_key_forwarded_to_litellm(
     monkeypatch, model, key_field, expected,
 ):
-    values = {"gemini_api_key": "", "google_api_key": "", "openai_api_key": ""}
+    values = {"gemini_api_key": "", "google_api_key": "", "openai_api_key": "", "nebius_api_key": ""}
     values[key_field] = expected
     monkeypatch.setattr(config, "get_settings", lambda: SimpleNamespace(**values))
     captured = []
@@ -51,6 +52,10 @@ def test_env_settings_key_forwarded_to_litellm(
     assert len(captured) == 1
     assert captured[0]["api_key"] == expected
     assert captured[0]["model"] == model
+    if model.startswith("nebius/"):
+        assert captured[0]["api_base"] == "https://api.tokenfactory.nebius.com/v1"
+    else:
+        assert "api_base" not in captured[0]
 
 
 def test_env_settings_prefers_gemini_key_over_google_key(monkeypatch):
